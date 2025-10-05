@@ -1,4 +1,4 @@
 #pragma once
 
-//parses the file via the tokeniser
-void parseFile();
+//parses the source via the tokeniser
+void parseTokens();

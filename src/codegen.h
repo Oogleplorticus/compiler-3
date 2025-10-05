@@ -32,8 +32,8 @@ typedef enum {
 
 //must be called before other functions, resets state
 void codegenSetTarget(CodegenTarget target);
-
-void codegenWriteToFile(FILE* file);
+//file extension will be added by this function, do not add it preemptively
+void codegenWriteToFile(char* file_path);
 
 //returns the codegen function ID
 size_t codegenCreateEntryFunction();
