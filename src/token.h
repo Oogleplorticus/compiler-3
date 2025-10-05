@@ -6,6 +6,8 @@
 typedef enum {
 	//misc
 	TOKEN_UNDETERMINED,
+	TOKEN_EOF,
+
 	TOKEN_IDENTIFIER,
 
 	//keywords
@@ -77,10 +79,12 @@ typedef struct {
 	size_t column_number;
 
 	union {
-		char character;
-		struct {char* text; size_t length;} string; //Not null-terminated. text points to a copy with escape characters handled
 		int64_t integer;
 		double real;
+		char character;
+		struct {char* text; size_t length;} string; //Not null-terminated. text points to a copy with escape characters handled
 		size_t identifier_ID;
 	} data;
 } Token;
+
+void printToken(Token token);
