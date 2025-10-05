@@ -19,7 +19,7 @@ void printToken(Token token) {
 		char buffer[token.data.string.length + 1];
 		buffer[token.data.string.length] = '\0';
 		memccpy(buffer, token.data.string.text, sizeof(char), token.data.string.length);
-		printf("data: %s}", buffer);
+		printf(", data: %s}", buffer);
 		break;
 	}
 }
