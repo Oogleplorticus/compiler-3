@@ -5,8 +5,9 @@ main() : {
 
 	i : usize = 0;
 	while i < n {
-		fibTemp : i32 = fib0 + fib1;
+		fibTemp := fib0 + fib1;
 		fib0 = fib1;
 		fib1 = fibTemp;
+		n -= 1;
 	}
 }

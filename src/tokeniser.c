@@ -5,7 +5,9 @@
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
+#include "identifier_table.h"
 #include "token.h"
 
 static FILE* source;
@@ -13,15 +15,37 @@ static FILE* source;
 static Token current_token;
 static Token next_token;
 
+//not super accurate
 static size_t line_number = 1;
 static size_t column_number = 1;
 
-void unexpectedCharacter(char c, size_t index, size_t line, size_t column) {
+static const struct {
+	const char* keyword;
+	size_t keyword_length;
+	TokenType type;
+} KEYWORD_TABLE[] = {
+	{"if", sizeof("if") - 1, TOKEN_IF},
+	{"else", sizeof("else") - 1, TOKEN_ELSE},
+	{"while", sizeof("while") - 1, TOKEN_WHILE},
+	{"for", sizeof("for") - 1, TOKEN_FOR},
+	{"return", sizeof("return") - 1, TOKEN_RETURN},
+};
+static const size_t KEYWORD_TABLE_LENGTH = sizeof(KEYWORD_TABLE) / sizeof(KEYWORD_TABLE[0]);
+//buffer should not be null terminated
+static TokenType findInKeywordTable(const char* buffer, size_t buffer_length) {
+	for (size_t i = 0; i < KEYWORD_TABLE_LENGTH; ++i) {
+		if (KEYWORD_TABLE[i].keyword_length != buffer_length) continue;
+		if (memcmp(buffer, KEYWORD_TABLE[i].keyword, buffer_length) == 0) return KEYWORD_TABLE[i].type;
+	}
+	return TOKEN_UNDETERMINED;
+}
+
+static inline void unexpectedCharacter(char c, size_t index, size_t line, size_t column) {
 	printf("ERROR: Unexpected character '%c' at index: %zu, line: %zu, column: %zu!\n", c, index, line, column);
 	exit(1);
 }
 
-void skipWhitespace() {
+static void skipWhitespace() {
 	char c = fgetc(source);
 	while (isspace(c)) {
 		if (c == '\n') {
@@ -35,19 +59,29 @@ void skipWhitespace() {
 	fseek(source, -1, SEEK_CUR);
 }
 
-void getNumberLiteral(Token* token, char first_char) {
-	char second_char = fgetc(source);
-
+static void getNumberLiteral(Token* token, char first_char) {
 	int base = 10;
+
 	//test for integer base
+	char second_char = fgetc(source);
 	if (first_char == '0' && !isdigit(second_char)) {
 		switch (second_char) {
 			case 'b': base = 2; break;
 			case 'o': base = 8; break;
 			case 'x': base = 16; break;
 
-			default: unexpectedCharacter(second_char, ftell(source) - 1, line_number, column_number + 2);
+			default:
+			fseek(source, -1, SEEK_CUR); // go back to start if no base
+			break;
 		}
+		//ensure base has proceding digit
+		char next_char = fgetc(source);
+		if (base != 10 && !isdigit(next_char)) {
+			unexpectedCharacter(next_char, ftell(source) - 1, line_number, column_number + 3);
+		}
+		fseek(source, -1, SEEK_CUR);
+	} else {
+		fseek(source, -1, SEEK_CUR); // go back to start if no base
 	}
 
 	bool real = false;
@@ -59,6 +93,7 @@ void getNumberLiteral(Token* token, char first_char) {
 		}
 		c = fgetc(source);
 	}
+	fseek(source, -1, SEEK_CUR);
 
 	//test for error
 	if (base != 10 && real) {
@@ -78,7 +113,7 @@ void getNumberLiteral(Token* token, char first_char) {
 		//convert string buffer
 		char* end_pointer;
 		token->data.real = strtod(buffer, &end_pointer);
-		if (end_pointer != NULL) {
+		if (end_pointer != buffer + token->length_in_source) {
 			printf("ERROR: Failed to fully convert real literal at index: %zu, line: %zu, column: %zu!\n", token->offset_in_source, line_number, column_number);
 			exit(1);
 		}
@@ -94,8 +129,8 @@ void getNumberLiteral(Token* token, char first_char) {
 		fread(buffer, sizeof(char), buffer_length - 1, source);
 		//convert string buffer
 		char* end_pointer;
-		token->data.integer = strtol(buffer, &end_pointer, base);
-		if (end_pointer != NULL) {
+		token->data.integer = strtoll(buffer, &end_pointer, base);
+		if (end_pointer != buffer + buffer_length - 1) {
 			printf("ERROR: Failed to fully convert integer literal at index: %zu, line: %zu, column: %zu!\n", token->offset_in_source, line_number, column_number);
 			exit(1);
 		}
@@ -103,7 +138,7 @@ void getNumberLiteral(Token* token, char first_char) {
 }
 
 //passing n will return \n
-char escapeCharacterToCharacter(char c) {
+static char escapeCharacterToCharacter(char c) {
 	switch (c) {
 		case 'n': return '\n';
 		case '\\': return '\\';
@@ -114,7 +149,7 @@ char escapeCharacterToCharacter(char c) {
 	}
 }
 
-void getCharacterLiteral(Token* token, char first_char) {
+static void getCharacterLiteral(Token* token) {
 	token->type = TOKEN_CHARACTER_LITERAL;
 	char second_char = fgetc(source);
 	if (second_char != '\\') {
@@ -133,7 +168,7 @@ void getCharacterLiteral(Token* token, char first_char) {
 	if (final_char != '\'') unexpectedCharacter(final_char, ftell(source) - 1, line_number, column_number + 2);
 }
 
-void getStringLiteral(Token* token, char first_char) {
+static void getStringLiteral(Token* token) {
 	token->type = TOKEN_STRING_LITERAL;
 
 	//determine string data length
@@ -172,7 +207,7 @@ void getStringLiteral(Token* token, char first_char) {
 
 	//insert string literal into allocated memory
 	fseek(source, token->offset_in_source + 1, SEEK_SET);
-	for (int i = 0; i < token->data.string.length; ++i) {
+	for (size_t i = 0; i < token->data.string.length; ++i) {
 		char c = fgetc(source);
 		if (c == '\\') {
 			char escape = fgetc(source);
@@ -183,7 +218,30 @@ void getStringLiteral(Token* token, char first_char) {
 	}
 }
 
-Token getToken(size_t search_index) {
+static void getIdentifierOrKeyword(Token* token) {
+	//get length
+	char c = fgetc(source);
+	while (isalnum(c) || c == '_') {
+		c = fgetc(source);
+	}
+	fseek(source, -1, SEEK_CUR);
+	token->length_in_source = ftell(source) - token->offset_in_source;
+
+	//create buffer of identifier/keyword text
+	fseek(source, token->offset_in_source, SEEK_SET);
+	char buffer[token->length_in_source];
+	fread(buffer, sizeof(char), token->length_in_source, source);
+
+	//test if a keyword
+	token->type = findInKeywordTable(buffer, token->length_in_source);
+	if (token->type != TOKEN_UNDETERMINED) return; //if its a keyword we are done
+
+	//we can now assume its an identifier
+	token->type = TOKEN_IDENTIFIER;
+	token->data.identifier_ID = getOrAddIdentifier(buffer, token->length_in_source).ID;
+}
+
+static Token getToken(size_t search_index) {
 	fseek(source, search_index, SEEK_SET);
 	skipWhitespace();
 
@@ -194,6 +252,7 @@ Token getToken(size_t search_index) {
 	token.length_in_source = 1; //default, will be overwritten
 	token.line_number = line_number;
 	token.column_number = column_number;
+	memset(&token.data, 0, sizeof(token.data)); //default, will be overwritten
 
 	char first_char = fgetc(source);
 	
@@ -215,34 +274,42 @@ Token getToken(size_t search_index) {
 
 	//test string literal
 	if (first_char == '"') {
-		getStringLiteral(&token, first_char);
+		getStringLiteral(&token);
 		column_number += token.length_in_source;
 		return token;
 	}
 
 	//test character literal
 	if (first_char == '\'') {
-		getCharacterLiteral(&token, first_char);
+		getCharacterLiteral(&token);
 		column_number += token.length_in_source;
 		return token;
 	}
 
-	//assume identifier or keyword
+	//test identifier or keyword
+	if (isalpha(first_char) || first_char == '_') {
+		getIdentifierOrKeyword(&token);
+		column_number += token.length_in_source;
+		return token;
+	}
 
+	//return erroneous token
 	return token;
 }
 
 void tokeniserSetSource(FILE* new_source) {
 	source = new_source;
 
+	//reset state
+	line_number = 1;
+	column_number = 1;
+
+	resetIdentifierTable();
+
 	//initialise tokens
 	current_token = getToken(0);
 	size_t next_token_search_index = current_token.offset_in_source + current_token.length_in_source;
 	next_token = getToken(next_token_search_index);
-
-	//reset line and column
-	line_number = 1;
-	column_number = 1;
 }
 
 Token currentToken() {
