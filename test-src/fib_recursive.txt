@@ -1,0 +1,13 @@
+main() : {
+	number : i32 = 5;
+	result : i32 = fib(number);
+	print(cast<String>(result));
+}
+
+fib(number : i32) : i32 {
+	if number <= 0 {
+		return number;
+	}
+
+	return fib(number - 1) + fib(number - 2);
+}
