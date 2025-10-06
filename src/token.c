@@ -7,7 +7,7 @@
 
 static const char* tokenTypeToString(TokenType type) {
 	switch (type) {
-		case TOKEN_UNDETERMINED: return "TOKEN_UNDETERMINED";
+		case TOKEN_NONE: return "TOKEN_UNDETERMINED";
 		case TOKEN_EOF: return "TOKEN_EOF";
 
 		case TOKEN_IDENTIFIER: return "TOKEN_IDENTIFIER";
@@ -36,7 +36,8 @@ static const char* tokenTypeToString(TokenType type) {
 		case TOKEN_BRACE_LEFT: return "TOKEN_BRACE_LEFT";
 		case TOKEN_BRACE_RIGHT: return "TOKEN_BRACE_RIGHT";
 		case TOKEN_SEMICOLON: return "TOKEN_SEMICOLON";
-		case TOKON_COMMA: return "TOKON_COMMA";
+		case TOKEN_COLON: return "TOKEN_COLON";
+		case TOKEN_COMMA: return "TOKEN_COMMA";
 		case TOKEN_EQUAL: return "TOKEN_EQUAL";
 		case TOKEN_PLUS: return "TOKEN_PLUS";
 		case TOKEN_MINUS: return "TOKEN_MINUS";

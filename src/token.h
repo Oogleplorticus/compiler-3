@@ -5,7 +5,7 @@
 
 typedef enum {
 	//misc
-	TOKEN_UNDETERMINED,
+	TOKEN_NONE,
 	TOKEN_EOF,
 
 	TOKEN_IDENTIFIER,
@@ -38,7 +38,8 @@ typedef enum {
 	TOKEN_BRACE_LEFT,
 	TOKEN_BRACE_RIGHT,
 	TOKEN_SEMICOLON,
-	TOKON_COMMA,
+	TOKEN_COLON,
+	TOKEN_COMMA,
 
 	//operators
 	//misc

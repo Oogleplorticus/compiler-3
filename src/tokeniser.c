@@ -43,7 +43,7 @@ static TokenType findInKeywordTable(const char* buffer, size_t buffer_length) {
 		int comparison_result = memcmp(buffer, KEYWORD_TABLE[i].keyword, buffer_length);
 		if (comparison_result == 0) return KEYWORD_TABLE[i].type;
 	}
-	return TOKEN_UNDETERMINED;
+	return TOKEN_NONE;
 }
 
 //MUST be sorted from longest length to shortest length
@@ -81,7 +81,8 @@ static const Punctuation PUNCTUATION_TABLE[] = {
 	{"{", sizeof("{") - sizeof(char), TOKEN_BRACE_LEFT},
 	{"}", sizeof("}") - sizeof(char), TOKEN_BRACE_RIGHT},
 	{";", sizeof(";") - sizeof(char), TOKEN_SEMICOLON},
-	{",", sizeof(",") - sizeof(char), TOKON_COMMA},
+	{":", sizeof(":") - sizeof(char), TOKEN_COLON},
+	{",", sizeof(",") - sizeof(char), TOKEN_COMMA},
 	{"=", sizeof("=") - sizeof(char), TOKEN_EQUAL},
 	{"+", sizeof("+") - sizeof(char), TOKEN_PLUS},
 	{"-", sizeof("-") - sizeof(char), TOKEN_MINUS},
@@ -102,7 +103,7 @@ static Punctuation findInPunctuationTable(const char* buffer) {
 		int comparison_result = memcmp(buffer, PUNCTUATION_TABLE[i].punctuation, PUNCTUATION_TABLE[i].length);
 		if (comparison_result == 0) return PUNCTUATION_TABLE[i];
 	}
-	Punctuation not_found = {"", 0, TOKEN_UNDETERMINED};
+	Punctuation not_found = {"", 0, TOKEN_NONE};
 	return not_found;
 }
 
@@ -359,7 +360,7 @@ static void getIdentifierOrKeyword(Token* token) {
 
 	//test if a keyword
 	token->type = findInKeywordTable(buffer, token->length_in_source);
-	if (token->type != TOKEN_UNDETERMINED) return; //if its a keyword we are done
+	if (token->type != TOKEN_NONE) return; //if its a keyword we are done
 
 	//we can now assume its an identifier
 	token->type = TOKEN_IDENTIFIER;
@@ -372,7 +373,7 @@ static Token getToken(size_t search_index) {
 
 	//initialise token
 	Token token;
-	token.type = TOKEN_UNDETERMINED; //default, will be overwritten
+	token.type = TOKEN_NONE; //default, will be overwritten
 	token.offset_in_source = ftell(source);
 	token.length_in_source = 1; //default, will be overwritten
 	token.line_number = line_number;
@@ -411,7 +412,7 @@ static Token getToken(size_t search_index) {
 
 	//test variable size types
 	getVariableSizeTypeIdentifier(&token, first_char);
-	if (token.type != TOKEN_UNDETERMINED) {
+	if (token.type != TOKEN_NONE) {
 		column_number += token.length_in_source;
 		return token;
 	}
@@ -428,7 +429,7 @@ static Token getToken(size_t search_index) {
 	fseek(source, token.offset_in_source, SEEK_SET);
 	fread(buffer, sizeof(buffer[0]), sizeof(buffer) / sizeof(buffer[0]), source);
 	Punctuation punctuation = findInPunctuationTable(buffer);
-	if (punctuation.type != TOKEN_UNDETERMINED) {
+	if (punctuation.type != TOKEN_NONE) {
 		token.type = punctuation.type;
 		token.length_in_source = punctuation.length;
 		column_number += token.length_in_source;
