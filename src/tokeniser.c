@@ -19,25 +19,87 @@ static Token next_token;
 static size_t line_number = 1;
 static size_t column_number = 1;
 
-static const struct {
+typedef struct {
 	const char* keyword;
-	size_t keyword_length;
+	const size_t length;
 	TokenType type;
-} KEYWORD_TABLE[] = {
-	{"if", sizeof("if") - 1, TOKEN_IF},
-	{"else", sizeof("else") - 1, TOKEN_ELSE},
-	{"while", sizeof("while") - 1, TOKEN_WHILE},
-	{"for", sizeof("for") - 1, TOKEN_FOR},
-	{"return", sizeof("return") - 1, TOKEN_RETURN},
+} Keyword;
+static const Keyword KEYWORD_TABLE[] = {
+	{"if", sizeof("if") - sizeof(char), TOKEN_IF},
+	{"else", sizeof("else") - sizeof(char), TOKEN_ELSE},
+	{"while", sizeof("while") - sizeof(char), TOKEN_WHILE},
+	{"for", sizeof("for") - sizeof(char), TOKEN_FOR},
+	{"return", sizeof("return") - sizeof(char), TOKEN_RETURN},
 };
 static const size_t KEYWORD_TABLE_LENGTH = sizeof(KEYWORD_TABLE) / sizeof(KEYWORD_TABLE[0]);
 //buffer should not be null terminated
 static TokenType findInKeywordTable(const char* buffer, size_t buffer_length) {
 	for (size_t i = 0; i < KEYWORD_TABLE_LENGTH; ++i) {
-		if (KEYWORD_TABLE[i].keyword_length != buffer_length) continue;
-		if (memcmp(buffer, KEYWORD_TABLE[i].keyword, buffer_length) == 0) return KEYWORD_TABLE[i].type;
+		if (KEYWORD_TABLE[i].length != buffer_length) continue;
+		int comparison_result = memcmp(buffer, KEYWORD_TABLE[i].keyword, buffer_length);
+		if (comparison_result == 0) return KEYWORD_TABLE[i].type;
 	}
 	return TOKEN_UNDETERMINED;
+}
+
+//MUST be sorted from longest length to shortest length
+//to prevent situations where << is identified as <
+typedef struct {
+	const char* punctuation;
+	const size_t length;
+	TokenType type;
+} Punctuation;
+static const Punctuation PUNCTUATION_TABLE[] = {
+	//length 3
+	{"<<=", sizeof("<<=") - sizeof(char), TOKEN_LESS_LESS_EQUAL},
+	{">>=", sizeof(">>=") - sizeof(char), TOKEN_GREATER_GREATER_EQUAL},
+	//length 2
+	{"<<", sizeof("<<") - sizeof(char), TOKEN_LESS_LESS},
+	{">>", sizeof(">>") - sizeof(char), TOKEN_GREATER_GREATER},
+	{"+=", sizeof("+=") - sizeof(char), TOKEN_PLUS_EQUAL},
+	{"-=", sizeof("-=") - sizeof(char), TOKEN_MINUS_EQUAL},
+	{"*=", sizeof("*=") - sizeof(char), TOKEN_STAR_EQUAL},
+	{"/=", sizeof("/=") - sizeof(char), TOKEN_FORWARD_SLASH_EQUAL},
+	{"%=", sizeof("%=") - sizeof(char), TOKEN_PERCENT_EQUAL},
+	{"&=", sizeof("&=") - sizeof(char), TOKEN_AMPERSAND_EQUAL},
+	{"|=", sizeof("|=") - sizeof(char), TOKEN_BAR_EQUAL},
+	{"^=", sizeof("^=") - sizeof(char), TOKEN_CARET_EQUAL},
+	{"~~", sizeof("~~") - sizeof(char), TOKEN_TILDE_TILDE},
+	{"==", sizeof("==") - sizeof(char), TOKEN_EQUAL_EQUAL},
+	{"!=", sizeof("!=") - sizeof(char), TOKEN_EXCLAMATION_EQUAL},
+	{"<=", sizeof("<=") - sizeof(char), TOKEN_LESS_EQUAL},
+	{">=", sizeof(">=") - sizeof(char), TOKEN_GREATER_EQUAL},
+	//length 1
+	{"(", sizeof("(") - sizeof(char), TOKEN_PARENTHESIS_LEFT},
+	{")", sizeof(")") - sizeof(char), TOKEN_PARENTHESIS_RIGHT},
+	{"[", sizeof("[") - sizeof(char), TOKEN_BRACKET_LEFT},
+	{"]", sizeof("]") - sizeof(char), TOKEN_BRACKET_RIGHT},
+	{"{", sizeof("{") - sizeof(char), TOKEN_BRACE_LEFT},
+	{"}", sizeof("}") - sizeof(char), TOKEN_BRACE_RIGHT},
+	{";", sizeof(";") - sizeof(char), TOKEN_SEMICOLON},
+	{",", sizeof(",") - sizeof(char), TOKON_COMMA},
+	{"=", sizeof("=") - sizeof(char), TOKEN_EQUAL},
+	{"+", sizeof("+") - sizeof(char), TOKEN_PLUS},
+	{"-", sizeof("-") - sizeof(char), TOKEN_MINUS},
+	{"*", sizeof("*") - sizeof(char), TOKEN_STAR},
+	{"/", sizeof("/") - sizeof(char), TOKEN_FORWARD_SLASH},
+	{"%", sizeof("%") - sizeof(char), TOKEN_PERCENT},
+	{"&", sizeof("&") - sizeof(char), TOKEN_AMPERSAND},
+	{"|", sizeof("|") - sizeof(char), TOKEN_BAR},
+	{"^", sizeof("^") - sizeof(char), TOKEN_CARET},
+	{"~", sizeof("~") - sizeof(char), TOKEN_TILDE},
+	{"<", sizeof("<") - sizeof(char), TOKEN_LESS},
+	{">", sizeof(">") - sizeof(char), TOKEN_GREATER},
+};
+static const size_t PUNCTUATION_TABLE_LENGTH = sizeof(PUNCTUATION_TABLE) / sizeof(PUNCTUATION_TABLE[0]);
+//buffer should not be null terminated, always 3 characters long
+static Punctuation findInPunctuationTable(const char* buffer) {
+	for (size_t i = 0; i < PUNCTUATION_TABLE_LENGTH; ++i) {
+		int comparison_result = memcmp(buffer, PUNCTUATION_TABLE[i].punctuation, PUNCTUATION_TABLE[i].length);
+		if (comparison_result == 0) return PUNCTUATION_TABLE[i];
+	}
+	Punctuation not_found = {"", 0, TOKEN_UNDETERMINED};
+	return not_found;
 }
 
 static inline void unexpectedCharacter(char c, size_t index, size_t line, size_t column) {
@@ -47,7 +109,7 @@ static inline void unexpectedCharacter(char c, size_t index, size_t line, size_t
 
 static void skipWhitespace() {
 	char c = fgetc(source);
-	while (isspace(c)) {
+	while (isspace(c) && !feof(source)) {
 		if (c == '\n') {
 			++line_number;
 			column_number = 1;
@@ -56,6 +118,8 @@ static void skipWhitespace() {
 		}
 		c = fgetc(source);
 	}
+
+	if (feof(source)) return;
 	fseek(source, -1, SEEK_CUR);
 }
 
@@ -254,16 +318,14 @@ static Token getToken(size_t search_index) {
 	token.column_number = column_number;
 	memset(&token.data, 0, sizeof(token.data)); //default, will be overwritten
 
-	char first_char = fgetc(source);
-	
 	//test eof
-	fgetc(source);
 	if (feof(source)) {
 		token.type = TOKEN_EOF;
 		token.length_in_source = 0;
 		return token;
 	}
-	fseek(source, -1, SEEK_CUR);
+
+	char first_char = fgetc(source);
 
 	//test number literal
 	if (isdigit(first_char)) {
@@ -289,6 +351,18 @@ static Token getToken(size_t search_index) {
 	//test identifier or keyword
 	if (isalpha(first_char) || first_char == '_') {
 		getIdentifierOrKeyword(&token);
+		column_number += token.length_in_source;
+		return token;
+	}
+
+	//test punctuation (operators and similar)
+	char buffer[3];
+	fseek(source, token.offset_in_source, SEEK_SET);
+	fread(buffer, sizeof(buffer[0]), sizeof(buffer) / sizeof(buffer[0]), source);
+	Punctuation punctuation = findInPunctuationTable(buffer);
+	if (punctuation.type != TOKEN_UNDETERMINED) {
+		token.type = punctuation.type;
+		token.length_in_source = punctuation.length;
 		column_number += token.length_in_source;
 		return token;
 	}
