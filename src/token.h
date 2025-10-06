@@ -17,6 +17,13 @@ typedef enum {
 	TOKEN_FOR,
 	TOKEN_RETURN,
 
+	//types
+	TOKEN_INTEGER_TYPE,
+	TOKEN_UNSIGNED_TYPE,
+	TOKEN_FLOAT_TYPE,
+	TOKEN_BOOL_TYPE,
+	TOKEN_CHARACTER_TYPE,
+
 	//literals
 	TOKEN_INTEGER_LITERAL,
 	TOKEN_REAL_LITERAL,
@@ -85,6 +92,7 @@ typedef struct {
 		char character;
 		struct {char* text; size_t length;} string; //Not null-terminated. text points to a copy with escape characters handled
 		size_t identifier_ID;
+		size_t type_width; //in bits
 	} data;
 } Token;
 

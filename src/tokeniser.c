@@ -30,6 +30,10 @@ static const Keyword KEYWORD_TABLE[] = {
 	{"while", sizeof("while") - sizeof(char), TOKEN_WHILE},
 	{"for", sizeof("for") - sizeof(char), TOKEN_FOR},
 	{"return", sizeof("return") - sizeof(char), TOKEN_RETURN},
+
+	//not technically keywords but works best here since they have set sizes
+	{"bool", sizeof("return") - sizeof(char), TOKEN_BOOL_TYPE},
+	{"char", sizeof("return") - sizeof(char), TOKEN_CHARACTER_TYPE},
 };
 static const size_t KEYWORD_TABLE_LENGTH = sizeof(KEYWORD_TABLE) / sizeof(KEYWORD_TABLE[0]);
 //buffer should not be null terminated
@@ -161,7 +165,8 @@ static void getNumberLiteral(Token* token, char first_char) {
 
 	//test for error
 	if (base != 10 && real) {
-		printf("ERROR: Disallowed based real literal at index: %zu, line: %zu, column: %zu!\n", token->offset_in_source, line_number, column_number);
+		printf("ERROR: Disallowed based real literal at index: %zu, line: %zu, column: %zu!\n",
+			token->offset_in_source, line_number, column_number);
 		exit(1);
 	}
 
@@ -175,10 +180,11 @@ static void getNumberLiteral(Token* token, char first_char) {
 		fseek(source, token->offset_in_source, SEEK_SET);
 		fread(buffer, sizeof(char), token->length_in_source, source);
 		//convert string buffer
-		char* end_pointer;
-		token->data.real = strtod(buffer, &end_pointer);
-		if (end_pointer != buffer + token->length_in_source) {
-			printf("ERROR: Failed to fully convert real literal at index: %zu, line: %zu, column: %zu!\n", token->offset_in_source, line_number, column_number);
+		char* end_ptr;
+		token->data.real = strtod(buffer, &end_ptr);
+		if (end_ptr != buffer + token->length_in_source) {
+			printf("ERROR: Failed to fully convert real literal at index: %zu, line: %zu, column: %zu!\n",
+				token->offset_in_source, line_number, column_number);
 			exit(1);
 		}
 	} else {
@@ -192,10 +198,11 @@ static void getNumberLiteral(Token* token, char first_char) {
 		fseek(source, copy_index, SEEK_SET);
 		fread(buffer, sizeof(char), buffer_length - 1, source);
 		//convert string buffer
-		char* end_pointer;
-		token->data.integer = strtoll(buffer, &end_pointer, base);
-		if (end_pointer != buffer + buffer_length - 1) {
-			printf("ERROR: Failed to fully convert integer literal at index: %zu, line: %zu, column: %zu!\n", token->offset_in_source, line_number, column_number);
+		char* end_ptr;
+		token->data.integer = strtoll(buffer, &end_ptr, base);
+		if (end_ptr != buffer + buffer_length - 1) {
+			printf("ERROR: Failed to fully convert integer literal at index: %zu, line: %zu, column: %zu!\n",
+				token->offset_in_source, line_number, column_number);
 			exit(1);
 		}
 	}
@@ -253,7 +260,8 @@ static void getStringLiteral(Token* token) {
 
 	//ensure proper syntax
 	if (c != '"') {
-		printf("ERROR: Could not process string literal at index: %zu, line: %zu, column: %zu!\n", token->offset_in_source, line_number, column_number);
+		printf("ERROR: Could not process string literal at index: %zu, line: %zu, column: %zu!\n",
+			token->offset_in_source, line_number, column_number);
 		exit(1);
 	}
 
@@ -280,6 +288,59 @@ static void getStringLiteral(Token* token) {
 			token->data.string.text[i] = c;
 		}
 	}
+}
+
+//only changes token if a variable type identifier
+static void getVariableSizeTypeIdentifier(Token* token, char first_char) {
+	//test for correct character
+	if (first_char != 'i' && first_char != 'u' && first_char != 'f') {
+		return;
+	}
+
+	char c = fgetc(source);
+
+	//ensure proceeding character is a number
+	if (!isdigit(c)) {
+		fseek(source, token->offset_in_source + 1, SEEK_SET);
+		return;
+	}
+
+	//find end of numbers
+	while (isdigit(c)) {
+		c = fgetc(source);
+	}
+
+	//ensure not an identifier instead
+	if (isalnum(c) || c == '_') {
+		fseek(source, token->offset_in_source + 1, SEEK_SET);
+		return;
+	}
+
+	//set token data
+	switch (first_char) {
+		case 'i': token->type = TOKEN_INTEGER_TYPE; break;
+		case 'u': token->type = TOKEN_UNSIGNED_TYPE; break;
+		case 'f': token->type = TOKEN_FLOAT_TYPE; break;
+
+		default:
+		printf("ERROR: Reached supposedly unreachable code in getVariableSizeTypeIdentifier() in tokeniser.c!\n");
+		exit(1);
+	}
+	token->length_in_source = ftell(source) - token->offset_in_source - 1;
+
+	char buffer[token->length_in_source];
+	fseek(source, token->offset_in_source + 1, SEEK_SET);
+	fread(buffer, sizeof(char), token->length_in_source - 1, source);
+	buffer[token->length_in_source - 1] = '\0';
+
+	char* end_ptr;
+	size_t type_width = strtoll(buffer, &end_ptr, 10);
+	if (end_ptr != buffer + token->length_in_source - 1) {
+		printf("ERROR: Failed to fully convert type identifier bit width at index: %zu, line: %zu, column: %zu!\n",
+			token->offset_in_source, line_number, column_number);
+		exit(1);
+	}
+	token->data.type_width = type_width;
 }
 
 static void getIdentifierOrKeyword(Token* token) {
@@ -344,6 +405,13 @@ static Token getToken(size_t search_index) {
 	//test character literal
 	if (first_char == '\'') {
 		getCharacterLiteral(&token);
+		column_number += token.length_in_source;
+		return token;
+	}
+
+	//test variable size types
+	getVariableSizeTypeIdentifier(&token, first_char);
+	if (token.type != TOKEN_UNDETERMINED) {
 		column_number += token.length_in_source;
 		return token;
 	}
