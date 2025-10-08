@@ -1,10 +1,13 @@
 #include "parser.h"
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include "codegen.h"
+#include "identifier_table.h"
 #include "token.h"
 #include "tokeniser.h"
 
@@ -77,8 +80,7 @@ static void freeParsingTables() {
 	free(variable_table);
 }
 
-//returns the ID of the entry
-size_t createFunctionTableEntry() {
+FunctionTableEntry* createFunctionTableEntry() {
 	if (function_table_length >= function_table_capacity) {
 		function_table_capacity *= 2;
 		FunctionTableEntry* new_table = realloc(function_table, function_table_capacity);
@@ -90,13 +92,15 @@ size_t createFunctionTableEntry() {
 	}
 
 	//initialise data
-	memset(function_table + function_table_length, 0, sizeof(FunctionTableEntry));
+	FunctionTableEntry* entry = function_table + function_table_length;
+	memset(entry, 0, sizeof(FunctionTableEntry));
+	entry->ID = function_table_length;
 
 	++function_table_length;
-	return function_table_length - 1;
+	return entry;
 }
 
-size_t createVariableTableEntry(size_t identifier_ID_count, size_t enclosing_scope_ID_count) {
+VariableTableEntry* createVariableTableEntry(size_t identifier_ID_count, size_t enclosing_scope_ID_count) {
 	if (variable_table_length >= variable_table_capacity) {
 		variable_table_capacity *= 2;
 		VariableTableEntry* new_table = realloc(variable_table, variable_table_capacity);
@@ -110,6 +114,7 @@ size_t createVariableTableEntry(size_t identifier_ID_count, size_t enclosing_sco
 	//initialise data
 	VariableTableEntry* entry = variable_table + variable_table_length;
 	memset(entry, 0, sizeof(VariableTableEntry));
+	entry->ID = variable_table_length;
 
 	entry->identifier_ID_count = identifier_ID_count;
 	entry->enclosing_scope_ID_count = enclosing_scope_ID_count;
@@ -122,7 +127,7 @@ size_t createVariableTableEntry(size_t identifier_ID_count, size_t enclosing_sco
 	entry->enclosing_scope_IDs = entry->identifier_IDs + entry->identifier_ID_count;
 
 	++variable_table_length;
-	return variable_table_length - 1;
+	return entry;
 }
 
 FunctionTableEntry* findInFunctionTable(size_t identifier_ID) {
@@ -135,11 +140,15 @@ FunctionTableEntry* findInFunctionTable(size_t identifier_ID) {
 	return NULL;
 }
 
-VariableTableEntry* findInVariableTable(size_t* identifier_IDs, size_t identifier_ID_count) {
+VariableTableEntry* findInVariableTable(size_t* identifier_IDs, size_t identifier_ID_count, size_t* enclosing_scope_IDs, size_t enclosing_scope_ID_count) {
 	for (size_t i = 0; i < variable_table_length; ++i) {
 		if (variable_table[i].identifier_ID_count != identifier_ID_count) continue;
+		if (variable_table[i].enclosing_scope_ID_count != enclosing_scope_ID_count) continue;
 		for (size_t i = 0; i < identifier_ID_count; ++i) {
 			if (identifier_IDs[i] != variable_table[i].identifier_IDs[i]) continue;
+		}
+		for (size_t i = 0; i < enclosing_scope_ID_count; ++i) {
+			if (enclosing_scope_IDs[i] != variable_table[i].enclosing_scope_IDs[i]) continue;
 		}
 
 		return variable_table + i;
@@ -201,10 +210,29 @@ static void parseVariableDefinition() {
 
 //starts on first parameter identifier or closing parenthesis
 //ends on first token of next statement
-static void parseFunctionDefinition() {
+static void parseFunctionDefinition(size_t identifier_ID) {
 	if (scope_depth > 0) {
-		printf("ERROR: attempted to define function outside of top scope!\n");
+		printf("ERROR: attempted to define function in invalid scope!\n");
 		unexpectedToken(currentToken());
+	}
+
+	//create function table entry
+	FunctionTableEntry* function_table_entry = createFunctionTableEntry();
+	function_table_entry->identifier_ID = identifier_ID;
+
+	//check if main
+	bool is_main = false;
+	Identifier identifier = getIdentifierFromID(identifier_ID);
+	if (identifier.name_length == sizeof("main") - sizeof(char)) {
+		int comparison_result = memcmp(identifier.name, "main", identifier.name_length);
+		if (comparison_result == 0) is_main = true;
+	}
+
+	//emit code
+	if (is_main) {
+		function_table_entry->codegen_ID = codegenCreateEntryFunction();
+	} else {
+		function_table_entry->codegen_ID = codegenCreateFunction(0);
 	}
 
 	//TODO handle parameters
@@ -238,6 +266,8 @@ static void parseFunction() {
 		unexpectedToken(currentToken());
 	}
 
+	size_t identifier_ID = currentToken().data.identifier_ID;
+
 	incrementToken();
 	incrementToken();
 
@@ -251,7 +281,7 @@ static void parseFunction() {
 	}
 
 	if (nextToken().type == TOKEN_COLON) {
-		parseFunctionDefinition();
+		parseFunctionDefinition(identifier_ID);
 		return;
 	}
 
