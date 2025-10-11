@@ -1,7 +1,9 @@
+#include <llvm-c/Core.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
 
-#include "codegen.h"
+#include "llvm_data.h"
 #include "parser.h"
 #include "tokeniser.h"
 
@@ -13,20 +15,6 @@ int main(int argc, char* argv[]) {
 	}
 	char* source_path = argv[1];
 
-	//get source file extension
-	char* source_file_extension = strrchr(source_path, '.');
-	if (source_file_extension == NULL) {
-		printf("ERROR: Source file has no extension!\n");
-		return 1;
-	}
-
-	//store copy of source path without extension
-	size_t source_path_without_extension_length = source_file_extension - source_path + 1;
-	char source_path_without_extension[source_path_without_extension_length];
-
-	memccpy(source_path_without_extension, source_file_extension, sizeof(char), source_path_without_extension_length);
-	source_path_without_extension[source_path_without_extension_length - 1] = '\0'; //null terminate
-
 	//open source file
 	FILE* source_file;
 	source_file = fopen(source_path, "r");
@@ -35,15 +23,24 @@ int main(int argc, char* argv[]) {
 		return 1;
 	}
 
+	//setup LLVM
+	setupLLVM(source_path);
+
 	//give file to tokeniser and parse file
 	tokeniserSetSource(source_file);
 	parseTokens();
 
-	//write to destination file
-	codegenWriteToFile(source_path_without_extension);
+	//output result
+	char* ll_error_message;
+	bool ll_success = LLVMPrintModuleToFile(llvm_module, strcat(source_path, ".ll"), &ll_error_message);
+	if (!ll_success) {
+		printf("ERROR: Failed to output llvm code: %s\n", ll_error_message);
+    	LLVMDisposeMessage(ll_error_message);
+	}
 
-	//close source file
+	//free resources
 	fclose(source_file);
+	destroyLLVM();
 
 	return 0;
 }

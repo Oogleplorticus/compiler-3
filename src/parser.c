@@ -6,8 +6,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "codegen.h"
 #include "identifier_table.h"
+#include "llvm_data.h"
 #include "token.h"
 #include "tokeniser.h"
 
@@ -226,13 +226,6 @@ static void parseFunctionDefinition(size_t identifier_ID) {
 	if (identifier.name_length == sizeof("main") - sizeof(char)) {
 		int comparison_result = memcmp(identifier.name, "main", identifier.name_length);
 		if (comparison_result == 0) is_main = true;
-	}
-
-	//emit code
-	if (is_main) {
-		function_table_entry->codegen_ID = codegenCreateEntryFunction();
-	} else {
-		function_table_entry->codegen_ID = codegenCreateFunction(0);
 	}
 
 	//TODO handle parameters
