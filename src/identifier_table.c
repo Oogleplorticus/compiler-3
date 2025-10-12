@@ -78,3 +78,9 @@ Identifier getIdentifierFromID(size_t ID) {
 	}
 	return identifier_table[ID];
 }
+
+void printIdentifierTable() {
+	for (size_t i = 0; i < identifier_table_length; ++i) {
+		printf("%zu: ID %zu, %.*s\n", i, identifier_table[i].ID, (int)identifier_table[i].name_length, identifier_table[i].name);
+	}
+}

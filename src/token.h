@@ -88,12 +88,12 @@ typedef struct {
 	size_t column_number;
 
 	union {
-		int64_t integer;
+		uint64_t integer;
 		double real;
 		char character;
 		struct {char* text; size_t length;} string; //Not null-terminated. text points to a copy with escape characters handled
 		size_t identifier_ID;
-		size_t type_width; //in bits
+		size_t type_width; //in bits, 0 for size type (usize, isize)
 	} data;
 } Token;
 

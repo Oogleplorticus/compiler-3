@@ -32,8 +32,11 @@ static const Keyword KEYWORD_TABLE[] = {
 	{"return", sizeof("return") - sizeof(char), TOKEN_RETURN},
 
 	//not technically keywords but works best here since they have set sizes
-	{"bool", sizeof("return") - sizeof(char), TOKEN_BOOL_TYPE},
-	{"char", sizeof("return") - sizeof(char), TOKEN_CHARACTER_TYPE},
+	{"isize", sizeof("isize") - sizeof(char), TOKEN_INTEGER_TYPE},
+	{"usize", sizeof("usize") - sizeof(char), TOKEN_UNSIGNED_TYPE},
+	{"fsize", sizeof("fsize") - sizeof(char), TOKEN_FLOAT_TYPE},
+	{"bool", sizeof("bool") - sizeof(char), TOKEN_BOOL_TYPE},
+	{"char", sizeof("char") - sizeof(char), TOKEN_CHARACTER_TYPE},
 };
 static const size_t KEYWORD_TABLE_LENGTH = sizeof(KEYWORD_TABLE) / sizeof(KEYWORD_TABLE[0]);
 //buffer should not be null terminated

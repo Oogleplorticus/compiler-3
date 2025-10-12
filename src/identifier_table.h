@@ -4,7 +4,7 @@
 
 typedef struct {
 	size_t ID;
-	const char* name;
+	const char* name; //not null terminated
 	size_t name_length;
 } Identifier;
 
@@ -15,3 +15,5 @@ void freeIdentifierTable();
 Identifier getOrAddIdentifier(const char* identifier_name, size_t identifier_name_length);
 
 Identifier getIdentifierFromID(size_t ID);
+
+void printIdentifierTable();

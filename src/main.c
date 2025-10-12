@@ -1,7 +1,10 @@
-#include <llvm-c/Core.h>
+#include <llvm-c/TargetMachine.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
+
+#include <llvm-c/Core.h>
+#include <llvm-c/Transforms/PassBuilder.h>
 
 #include "llvm_data.h"
 #include "parser.h"
@@ -31,9 +34,13 @@ int main(int argc, char* argv[]) {
 	parseTokens();
 
 	//output result
+	char output_path[strlen(source_path) + sizeof(".ll")];
+	strcpy(output_path, source_path);
+	strcat(output_path, ".ll");
+
 	char* ll_error_message;
-	bool ll_success = LLVMPrintModuleToFile(llvm_module, strcat(source_path, ".ll"), &ll_error_message);
-	if (!ll_success) {
+	bool ll_failure = LLVMPrintModuleToFile(llvm_module, output_path, &ll_error_message);
+	if (ll_failure) {
 		printf("ERROR: Failed to output llvm code: %s\n", ll_error_message);
     	LLVMDisposeMessage(ll_error_message);
 	}
