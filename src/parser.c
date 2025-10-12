@@ -566,6 +566,16 @@ static void parseFunctionDefinition(size_t identifier_ID) {
 	null_terminated_name[identifier.name_length] = '\0';
 	memccpy(null_terminated_name, identifier.name, sizeof(char), identifier.name_length);
 
+	//if main hardcode return value of i32
+	if (strcmp(null_terminated_name, "main") == 0) {
+		function_type = LLVMFunctionType(
+			LLVMInt32TypeInContext(llvm_context),
+			NULL,
+			0,
+			0
+		);
+	}
+
 	function_table_entry->llvm_ID = LLVMAddFunction(llvm_module, null_terminated_name, function_type);
 
 	//emit entry block
@@ -689,6 +699,20 @@ static void parseWhile() {
 
 //starts on the return keyword
 static void parseReturn() {
+	FunctionTableEntry* current_function = findInFunctionTable(scope_stack[FUNCTION_SCOPE_INDEX].ID);
+	
+	//if main hardcoded return 0
+	const char* function_name = LLVMGetValueName(current_function->llvm_ID);
+	if (strcmp(function_name, "main") == 0) {
+		LLVMBuildRet(llvm_builder, LLVMConstInt(LLVMInt32TypeInContext(llvm_context), 0, 0));
+
+		//assume void return since its main
+		incrementToken();
+		incrementToken();
+		return;
+	}
+
+
 	LLVMBuildRetVoid(llvm_builder);
 	//assume void return
 	incrementToken();
