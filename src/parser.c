@@ -564,12 +564,30 @@ static void parseVariableDefinition() {
 	}
 }
 
-//starts on first parameter identifier or closing parenthesis
+//starts on fn keyword
 //ends on first token of next statement
-static void parseFunctionDefinition(size_t identifier_ID) {
+static void parseFunctionDefinition() {
 	if (scope_depth > 0) {
 		printf("ERROR: attempted to define function in invalid scope!\n");
 		unexpectedToken(currentToken());
+	}
+	if (currentToken().type != TOKEN_FN) {
+		unexpectedToken(currentToken());
+	}
+
+	incrementToken();
+	size_t identifier_ID = currentToken().data.identifier_ID;
+
+	incrementToken();
+	incrementToken();
+
+	//ensure no unexpected tokens
+	switch (currentToken().type) {
+		case TOKEN_IDENTIFIER:
+		case TOKEN_PARENTHESIS_RIGHT:
+		break;
+
+		default: unexpectedToken(currentToken());
 	}
 
 	//create function table entry
@@ -580,27 +598,23 @@ static void parseFunctionDefinition(size_t identifier_ID) {
 
 	//TODO handle parameters
 
-	//ensure correct tokens
+	//ensure correct token
 	if (currentToken().type != TOKEN_PARENTHESIS_RIGHT) {
 		unexpectedToken(currentToken());
 	}
-	if (nextToken().type != TOKEN_COLON) {
-		unexpectedToken(nextToken());
-	}
+	incrementToken();
 
-	incrementToken();
-	incrementToken();
+	//TODO handle tags
 
 	//if type get type
 	//assume type first
 	LLVMTypeRef llvm_return_type = LLVMVoidTypeInContext(llvm_context);
-	if (currentToken().type != TOKEN_BRACE_LEFT) {
+	if (currentToken().type == TOKEN_MINUS_GREATER) {
+		incrementToken(); //get to type
 		llvm_return_type = llvmTypeFromToken(currentToken());
-		incrementToken();
+		incrementToken(); //continue to brace
 	}
 	function_table_entry->llvm_return_type = llvm_return_type;
-
-	//TODO handle tags
 
 	//emit function
 	LLVMTypeRef function_type = LLVMFunctionType(
@@ -644,43 +658,14 @@ static void parseFunctionDefinition(size_t identifier_ID) {
 	++scope_depth;
 }
 
-//starts on function identifier
-//ends on first token of next statement
-static void parseFunction() {
-	//ensure correct token
-	if (currentToken().type != TOKEN_IDENTIFIER) {
-		unexpectedToken(currentToken());
-	}
-
-	size_t identifier_ID = currentToken().data.identifier_ID;
-
-	incrementToken();
-	incrementToken();
-
-	//ensure no unexpected tokens
-	switch (currentToken().type) {
-		case TOKEN_IDENTIFIER:
-		case TOKEN_PARENTHESIS_RIGHT:
-		break;
-
-		default: unexpectedToken(currentToken());
-	}
-
-	if (nextToken().type == TOKEN_COLON) {
-		parseFunctionDefinition(identifier_ID);
-		return;
-	}
-
-	//TODO handle function calls
-}
-
 //starts on first token of statement
 //ends on first token of next statement
 static void parseIdentifier() {
 	switch (nextToken().type) {
 		case TOKEN_COLON: parseVariableDefinition(); return;
-		case TOKEN_PARENTHESIS_LEFT: parseFunction(); return;
 
+		//function call, potentially part of expression
+		case TOKEN_PARENTHESIS_LEFT:
 		//expression
 		case TOKEN_EQUAL:
 		case TOKEN_PLUS_EQUAL:
@@ -807,6 +792,7 @@ static void closeScope() {
 //ends on first token of next statement
 static void parseStatement() {
 	switch (currentToken().type) {
+		case TOKEN_FN: parseFunctionDefinition(); return;
 		case TOKEN_IDENTIFIER: parseIdentifier(); return;
 		case TOKEN_WHILE: parseWhile(); return;
 		case TOKEN_RETURN: parseReturn(); return;

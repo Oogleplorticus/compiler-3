@@ -25,6 +25,7 @@ typedef struct {
 	TokenType type;
 } Keyword;
 static const Keyword KEYWORD_TABLE[] = {
+	{"fn", sizeof("fn") - sizeof(char), TOKEN_FN},
 	{"if", sizeof("if") - sizeof(char), TOKEN_IF},
 	{"else", sizeof("else") - sizeof(char), TOKEN_ELSE},
 	{"while", sizeof("while") - sizeof(char), TOKEN_WHILE},
@@ -60,6 +61,7 @@ static const Punctuation PUNCTUATION_TABLE[] = {
 	{"<<=", sizeof("<<=") - sizeof(char), TOKEN_LESS_LESS_EQUAL},
 	{">>=", sizeof(">>=") - sizeof(char), TOKEN_GREATER_GREATER_EQUAL},
 	//length 2
+	{"->", sizeof("->") - sizeof(char), TOKEN_MINUS_GREATER},
 	{"<<", sizeof("<<") - sizeof(char), TOKEN_LESS_LESS},
 	{">>", sizeof(">>") - sizeof(char), TOKEN_GREATER_GREATER},
 	{"+=", sizeof("+=") - sizeof(char), TOKEN_PLUS_EQUAL},

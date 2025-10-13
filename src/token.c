@@ -11,6 +11,7 @@ static const char* tokenTypeToString(TokenType type) {
 
 		case TOKEN_IDENTIFIER: return "TOKEN_IDENTIFIER";
 
+		case TOKEN_FN: return "TOKEN_FN";
 		case TOKEN_IF: return "TOKEN_IF";
 		case TOKEN_ELSE: return "TOKEN_ELSE";
 		case TOKEN_WHILE: return "TOKEN_WHILE";

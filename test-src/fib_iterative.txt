@@ -1,4 +1,4 @@
-main() : {
+fn main() {
 	fib0 : i32 = 0;
 	fib1 : i32 = 1;
 	n : usize = 20;

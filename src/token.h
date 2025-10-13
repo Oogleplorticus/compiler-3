@@ -11,6 +11,7 @@ typedef enum {
 	TOKEN_IDENTIFIER,
 
 	//keywords
+	TOKEN_FN, //function def keyword (fn)
 	TOKEN_IF,
 	TOKEN_ELSE,
 	TOKEN_WHILE,
@@ -40,6 +41,7 @@ typedef enum {
 	TOKEN_SEMICOLON,
 	TOKEN_COLON,
 	TOKEN_COMMA,
+	TOKEN_MINUS_GREATER,
 
 	//operators
 	//misc
