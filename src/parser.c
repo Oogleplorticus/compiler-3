@@ -15,6 +15,9 @@
 #include "token.h"
 #include "tokeniser.h"
 
+//forward declarations
+static LLVMValueRef parseExpression(TokenType previous_operator_type);
+
 //state variables
 static size_t scope_depth = 0;
 //if you have over 128 nested scopes you should delete your codebase
@@ -397,6 +400,42 @@ static VariableTableEntry* parseVariable() {
 	return variable;
 }
 
+//starts on the function identifier
+//ends on the token after the call
+static LLVMValueRef parseFunctionCall() {
+	if (currentToken().type != TOKEN_IDENTIFIER) {
+		unexpectedToken(currentToken());
+	}
+	if (nextToken().type != TOKEN_PARENTHESIS_LEFT) {
+		unexpectedToken(nextToken());
+	}
+
+	//create args buffer
+	LLVMValueRef args_buffer[32]; //surely no more than 32 args
+	size_t args_count = 0;
+
+	//parse arguments
+	incrementToken();
+	while (currentToken().type != TOKEN_PARENTHESIS_RIGHT) {
+		incrementToken();
+		args_buffer[args_count] = parseExpression(TOKEN_NONE);
+	}
+	incrementToken();
+
+	FunctionTableEntry* function = findInFunctionTable(currentToken().data.identifier_ID);
+
+	LLVMValueRef llvm_return_value = LLVMBuildCall2(
+		llvm_builder,
+		function->llvm_return_type,
+		function->llvm_ID,
+		args_buffer,
+		args_count,
+		""
+	);
+
+	return llvm_return_value;
+}
+
 //starts on the first token of the operand
 //ends on the token after the operand
 static LLVMValueRef getExpressionOperand(VariableTableEntry* variable) {
@@ -414,6 +453,10 @@ static LLVMValueRef getExpressionOperand(VariableTableEntry* variable) {
 		value = LLVMConstInt(LLVMIntTypeInContext(llvm_context, 64), currentToken().data.integer, false);
 		incrementToken();
 		return value;
+
+		case TOKEN_IDENTIFIER:
+		//we already know its not a variable
+		return parseFunctionCall();
 
 		default: unexpectedToken(currentToken());
 	}
@@ -439,7 +482,12 @@ static LLVMValueRef parseExpression(TokenType previous_operator_type) {
 
 	LLVMValueRef left = getExpressionOperand(variable);
 
-	while (currentToken().type != TOKEN_SEMICOLON && currentToken().type != TOKEN_BRACE_LEFT) {
+	while (
+		currentToken().type != TOKEN_SEMICOLON && 
+		currentToken().type != TOKEN_BRACE_LEFT &&
+		currentToken().type != TOKEN_COMMA &&
+		currentToken().type != TOKEN_PARENTHESIS_RIGHT
+	) {
 		TokenType current_operator_type = currentToken().type;
 		
 		//if we drop down in operator precedence, return back up until operator precence equal/greater
@@ -596,7 +644,43 @@ static void parseFunctionDefinition() {
 	scope_stack[FUNCTION_SCOPE_INDEX].ID = function_table_entry->ID;
 	scope_stack[scope_depth + 1].ID = 0;
 
-	//TODO handle parameters
+	//parse parameters
+	LLVMTypeRef parameter_type_buffer[32]; //surely no more than 32 args
+	VariableTableEntry* parameter_variable_buffer[32];
+	size_t parameter_count = 0;
+
+	while (currentToken().type != TOKEN_PARENTHESIS_RIGHT) {
+		//if comma move on
+		if (currentToken().type == TOKEN_COMMA) {
+			incrementToken();
+			continue;
+		}
+
+		//check tokens
+		if (currentToken().type != TOKEN_IDENTIFIER) {
+			unexpectedToken(currentToken());
+		}
+		if (nextToken().type != TOKEN_COLON) {
+			unexpectedToken(nextToken());
+		}
+
+		//create variable table entry
+		VariableTableEntry* variable = createVariableTableEntry(1, 1);
+		variable->identifier_IDs[0] = currentToken().data.identifier_ID;
+		variable->enclosing_scope_IDs[0] = scope_stack[FUNCTION_SCOPE_INDEX].ID;
+		
+		incrementToken();
+		incrementToken();
+		variable->llvm_type = llvmTypeFromToken(currentToken());
+
+		//add to buffers
+		parameter_variable_buffer[parameter_count] = variable;
+		parameter_type_buffer[parameter_count] = variable->llvm_type;
+		++parameter_count;
+
+		//increment
+		incrementToken();
+	}
 
 	//ensure correct token
 	if (currentToken().type != TOKEN_PARENTHESIS_RIGHT) {
@@ -619,8 +703,8 @@ static void parseFunctionDefinition() {
 	//emit function
 	LLVMTypeRef function_type = LLVMFunctionType(
 		llvm_return_type,
-		NULL,
-		0,
+		parameter_type_buffer,
+		parameter_count,
 		0
 	);
 
@@ -792,7 +876,7 @@ static void closeScope() {
 //ends on first token of next statement
 static void parseStatement() {
 	switch (currentToken().type) {
-		case TOKEN_FN: parseFunctionDefinition(); return;
+		
 		case TOKEN_IDENTIFIER: parseIdentifier(); return;
 		case TOKEN_WHILE: parseWhile(); return;
 		case TOKEN_RETURN: parseReturn(); return;
@@ -801,6 +885,16 @@ static void parseStatement() {
 		closeScope();
 		incrementToken();
 		return;
+
+		default: unexpectedToken(currentToken());
+	}
+}
+
+//starts on first token of statement
+//ends on first token of next top level statement
+static void parseTopLevelStatement() {
+	switch (currentToken().type) {
+		case TOKEN_FN: parseFunctionDefinition(); return;
 
 		default: unexpectedToken(currentToken());
 	}

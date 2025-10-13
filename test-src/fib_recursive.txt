@@ -1,7 +1,7 @@
 fn main() {
 	number : i32 = 5;
 	result : i32 = fib(number);
-	print(cast<String>(result));
+	return;
 }
 
 fn fib(number : i32) -> i32 {

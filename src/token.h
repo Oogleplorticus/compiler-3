@@ -12,6 +12,8 @@ typedef enum {
 
 	//keywords
 	TOKEN_FN, //function def keyword (fn)
+	TOKEN_STRUCT,
+	
 	TOKEN_IF,
 	TOKEN_ELSE,
 	TOKEN_WHILE,
