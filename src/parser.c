@@ -34,9 +34,10 @@ static struct {
 typedef struct {
 	size_t ID; //same as index within the function table
 
-	size_t identifier_ID; 
+	size_t identifier_ID;
 
 	LLVMValueRef llvm_ID;
+	LLVMTypeRef llvm_return_type;
 	LLVMBasicBlockRef entry_block;
 } FunctionTableEntry;
 
@@ -182,6 +183,44 @@ static void unexpectedToken(Token token) {
 	printToken(token);
 	printf("!\n");
 	exit(1);
+}
+
+static LLVMTypeRef llvmTypeFromToken(Token token) {
+	switch (token.type) {
+		case TOKEN_INTEGER_TYPE:
+		case TOKEN_UNSIGNED_TYPE:
+		if (token.data.type_width == 0) {
+			return LLVMIntTypeInContext(llvm_context, sizeof(size_t) * 8); //assume compiling for host machine
+		} else {
+			return LLVMIntTypeInContext(llvm_context, token.data.type_width);
+		}
+		
+		case TOKEN_FLOAT_TYPE:
+		switch (token.data.type_width) {
+			case 16:
+			return LLVMHalfTypeInContext(llvm_context);
+			case 32:
+			return LLVMFloatTypeInContext(llvm_context);
+			case 64:
+			return LLVMDoubleTypeInContext(llvm_context);
+			case 128:
+			return LLVMFP128TypeInContext(llvm_context);
+			default:
+			printf("ERROR: Unsupported floating point width!\n");
+			unexpectedToken(token);
+			return NULL;
+		}
+
+		case TOKEN_BOOL_TYPE:
+		return LLVMInt1TypeInContext(llvm_context);
+
+		case TOKEN_CHARACTER_TYPE:
+		return LLVMInt32TypeInContext(llvm_context); //chars are always UTF-32
+
+		default: unexpectedToken(token);
+	}
+
+	return NULL;
 }
 
 //larger number = greater precedence
@@ -479,9 +518,10 @@ static void parseVariableDefinition() {
 	incrementToken();
 	incrementToken();
 
-	//TODO handle type and tags
-	LLVMTypeRef llvm_type = LLVMIntTypeInContext(llvm_context, 64); //assume i64
-	//skip for now
+	//assume type first
+	LLVMTypeRef llvm_type = llvmTypeFromToken(currentToken());
+	//TODO handle tags
+	//skip rest for now
 	while (currentToken().type != TOKEN_SEMICOLON && currentToken().type != TOKEN_EQUAL) {
 		incrementToken();
 	}
@@ -551,11 +591,20 @@ static void parseFunctionDefinition(size_t identifier_ID) {
 	incrementToken();
 	incrementToken();
 
-	//TODO handle return value and tags
+	//if type get type
+	//assume type first
+	LLVMTypeRef llvm_return_type = LLVMVoidTypeInContext(llvm_context);
+	if (currentToken().type != TOKEN_BRACE_LEFT) {
+		llvm_return_type = llvmTypeFromToken(currentToken());
+		incrementToken();
+	}
+	function_table_entry->llvm_return_type = llvm_return_type;
+
+	//TODO handle tags
 
 	//emit function
 	LLVMTypeRef function_type = LLVMFunctionType(
-		LLVMVoidTypeInContext(llvm_context),
+		llvm_return_type,
 		NULL,
 		0,
 		0
@@ -699,9 +748,13 @@ static void parseWhile() {
 
 //starts on the return keyword
 static void parseReturn() {
-	FunctionTableEntry* current_function = findInFunctionTable(scope_stack[FUNCTION_SCOPE_INDEX].ID);
+	FunctionTableEntry* current_function = &function_table[scope_stack[FUNCTION_SCOPE_INDEX].ID];
+	if (current_function == NULL) {
+		printf("ERROR: could not find function with identifier ID %zu in function table when parsing return statement!\n", scope_stack[FUNCTION_SCOPE_INDEX].ID);
+		exit(1);
+	}
 	
-	//if main hardcoded return 0
+	//if main hardcoded return 0 to work with libc
 	const char* function_name = LLVMGetValueName(current_function->llvm_ID);
 	if (strcmp(function_name, "main") == 0) {
 		LLVMBuildRet(llvm_builder, LLVMConstInt(LLVMInt32TypeInContext(llvm_context), 0, 0));
@@ -712,11 +765,10 @@ static void parseReturn() {
 		return;
 	}
 
-
-	LLVMBuildRetVoid(llvm_builder);
-	//assume void return
-	incrementToken();
-	incrementToken();
+	incrementToken(); //get to actual returned value
+	//return expression
+	LLVMBuildRet(llvm_builder, parseExpression(TOKEN_NONE));
+	incrementToken(); //increment past semicolon
 }
 
 static void closeScope() {

@@ -28,6 +28,7 @@ int main(int argc, char* argv[]) {
 
 	//setup LLVM
 	setupLLVM(source_path);
+	LLVMSetTarget(llvm_module, "x86_64-pc-linux-gnu"); //assume target
 
 	//give file to tokeniser and parse file
 	tokeniserSetSource(source_file);

@@ -1,7 +1,7 @@
 main() : {
 	fib0 : i32 = 0;
 	fib1 : i32 = 1;
-	n : usize = 5;
+	n : usize = 20;
 
 	i : usize = 0;
 	while i < n {
