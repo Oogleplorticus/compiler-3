@@ -9,7 +9,7 @@ static Identifier* identifier_table = NULL;
 static size_t identifier_table_length = 0;
 static size_t identifier_table_capacity = 0;
 
-static void expandTable() {
+static void expandTable(void) {
 	identifier_table_capacity *= 2;
 	Identifier* new_table = realloc(identifier_table, identifier_table_capacity);
 	if (new_table == NULL) {
@@ -20,7 +20,7 @@ static void expandTable() {
 	identifier_table = new_table;
 }
 
-void resetIdentifierTable() {
+void resetIdentifierTable(void) {
 	//free if already exists
 	if (identifier_table != NULL) {
 		freeIdentifierTable();
@@ -39,7 +39,7 @@ void resetIdentifierTable() {
 	identifier_table = new_table;
 }
 
-void freeIdentifierTable() {
+void freeIdentifierTable(void) {
 	for (size_t i = 0; i < identifier_table_length; ++i) {
 		free((void*)identifier_table[i].name);
 	}
@@ -79,7 +79,7 @@ Identifier getIdentifierFromID(size_t ID) {
 	return identifier_table[ID];
 }
 
-void printIdentifierTable() {
+void printIdentifierTable(void) {
 	for (size_t i = 0; i < identifier_table_length; ++i) {
 		printf("%zu: ID %zu, %.*s\n", i, identifier_table[i].ID, (int)identifier_table[i].name_length, identifier_table[i].name);
 	}

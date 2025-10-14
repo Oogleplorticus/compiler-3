@@ -116,7 +116,7 @@ static inline void unexpectedCharacter(char c, size_t index, size_t line, size_t
 	exit(1);
 }
 
-static void skipWhitespace() {
+static void skipWhitespace(void) {
 	char c = fgetc(source);
 	while (isspace(c) && !feof(source)) {
 		if (c == '\n') {
@@ -459,15 +459,15 @@ void tokeniserSetSource(FILE* new_source) {
 	next_token = getToken(next_token_search_index);
 }
 
-Token currentToken() {
+Token currentToken(void) {
 	return current_token;
 }
 
-Token nextToken() {
+Token nextToken(void) {
 	return next_token;
 }
 
-void incrementToken() {
+void incrementToken(void) {
 	//free string literal token data
 	if (current_token.type == TOKEN_STRING_LITERAL) {
 		free(current_token.data.string.text);

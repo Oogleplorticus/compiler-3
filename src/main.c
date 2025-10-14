@@ -1,8 +1,7 @@
+#include <llvm-c/Core.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
-
-#include <llvm-c/Core.h>
 
 #include "compilation_unit.h"
 #include "declaration_parser.h"
@@ -20,7 +19,7 @@ int main(int argc, char* argv[]) {
 	LLVMContextRef llvm_context = LLVMContextCreate();
 	
 	//setup compilation unit
-	CompilationUnit compilation_unit = createCompilationUnit(source_path, llvm_context);
+	CompilationUnit compilation_unit = compilationUnit_create(source_path, llvm_context);
 	LLVMSetTarget(compilation_unit.llvm_module, "x86_64-pc-linux-gnu"); //assume target
 
 	//compile
@@ -40,7 +39,7 @@ int main(int argc, char* argv[]) {
 	}
 
 	//free resources
-	destroyCompilationUnit(&compilation_unit);
+	compilationUnit_destroy(&compilation_unit);
 	LLVMContextDispose(llvm_context);
 
 	return 0;

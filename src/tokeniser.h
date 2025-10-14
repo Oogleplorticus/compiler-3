@@ -8,6 +8,6 @@
 //must be called before other functions, resets state
 void tokeniserSetSource(FILE* new_source);
 
-Token currentToken();
-Token nextToken();
-void incrementToken();
+Token currentToken(void);
+Token nextToken(void);
+void incrementToken(void);

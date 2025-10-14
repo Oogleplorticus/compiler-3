@@ -10,7 +10,7 @@ OBJ := $(SRC:$(SRC_DIR)/%.c=$(OBJ_DIR)/%.o)
 OBJ_DIRS := $(sort $(dir $(OBJ)))
 
 #flags
-CC := gcc
+CC := clang
 
 CFLAGS := -g -O0 -Wall -Wextra -pedantic
 DFLAGS := -MMD -MP

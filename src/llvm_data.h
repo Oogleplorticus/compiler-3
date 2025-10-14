@@ -7,4 +7,4 @@ extern LLVMModuleRef llvm_module;
 extern LLVMBuilderRef llvm_builder;
 
 void setupLLVM(const char* module_ID);
-void destroyLLVM();
+void destroyLLVM(void);

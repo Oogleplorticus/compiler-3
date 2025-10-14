@@ -13,7 +13,7 @@ void setupLLVM(const char* module_ID) {
 	llvm_builder = LLVMCreateBuilderInContext(llvm_context);
 }
 
-void destroyLLVM() {
+void destroyLLVM(void) {
 	LLVMDisposeBuilder(llvm_builder);
 	LLVMDisposeModule(llvm_module);
 	LLVMContextDispose(llvm_context);

@@ -67,7 +67,7 @@ static VariableTableEntry* variable_table = NULL;
 static size_t variable_table_length = 0;
 static size_t variable_table_capacity = 0;
 
-static void initialiseParsingTables() {
+static void initialiseParsingTables(void) {
 	//set capacities and lengths
 	function_table_capacity = 16;
 	variable_table_capacity = 32;
@@ -88,7 +88,7 @@ static void initialiseParsingTables() {
 	}
 }
 
-static void freeParsingTables() {
+static void freeParsingTables(void) {
 	for (size_t i = 0; i < variable_table_length; ++i) {
 		//enclosing scope ids doesnt need to be freed as it is contiguous with identifier ids
 		free(variable_table[i].identifier_IDs); 
@@ -98,7 +98,7 @@ static void freeParsingTables() {
 	free(variable_table);
 }
 
-FunctionTableEntry* createFunctionTableEntry() {
+FunctionTableEntry* createFunctionTableEntry(void) {
 	if (function_table_length >= function_table_capacity) {
 		function_table_capacity *= 2;
 		FunctionTableEntry* new_table = realloc(function_table, function_table_capacity);
@@ -376,7 +376,7 @@ static void emitAssignmentOperation(TokenType operator_type, VariableTableEntry*
 	}
 }
 
-static VariableTableEntry* parseVariable() {
+static VariableTableEntry* parseVariable(void) {
 	VariableTableEntry* variable = NULL;
 
 	//get enclosing scopes
@@ -402,7 +402,7 @@ static VariableTableEntry* parseVariable() {
 
 //starts on the function identifier
 //ends on the token after the call
-static LLVMValueRef parseFunctionCall() {
+static LLVMValueRef parseFunctionCall(void) {
 	if (currentToken().type != TOKEN_IDENTIFIER) {
 		unexpectedToken(currentToken());
 	}
@@ -550,7 +550,7 @@ static LLVMValueRef parseExpression(TokenType previous_operator_type) {
 
 //starts on variable identifier
 //ends on first token of next statement
-static void parseVariableDefinition() {
+static void parseVariableDefinition(void) {
 	//ensure correct tokens
 	if (currentToken().type != TOKEN_IDENTIFIER) {
 		unexpectedToken(currentToken());
@@ -614,7 +614,7 @@ static void parseVariableDefinition() {
 
 //starts on fn keyword
 //ends on first token of next statement
-static void parseFunctionDefinition() {
+static void parseFunctionDefinition(void) {
 	if (scope_depth > 0) {
 		printf("ERROR: attempted to define function in invalid scope!\n");
 		unexpectedToken(currentToken());
@@ -744,7 +744,7 @@ static void parseFunctionDefinition() {
 
 //starts on first token of statement
 //ends on first token of next statement
-static void parseIdentifier() {
+static void parseIdentifier(void) {
 	switch (nextToken().type) {
 		case TOKEN_COLON: parseVariableDefinition(); return;
 
@@ -773,7 +773,7 @@ static void parseIdentifier() {
 
 //starts on the while keyword
 //ends on first token of next statement
-static void parseWhile() {
+static void parseWhile(void) {
 	//ensure correct token
 	if (currentToken().type != TOKEN_WHILE) {
 		unexpectedToken(currentToken());
@@ -816,7 +816,7 @@ static void parseWhile() {
 }
 
 //starts on the return keyword
-static void parseReturn() {
+static void parseReturn(void) {
 	FunctionTableEntry* current_function = &function_table[scope_stack[FUNCTION_SCOPE_INDEX].ID];
 	if (current_function == NULL) {
 		printf("ERROR: could not find function with identifier ID %zu in function table when parsing return statement!\n", scope_stack[FUNCTION_SCOPE_INDEX].ID);
@@ -840,7 +840,7 @@ static void parseReturn() {
 	incrementToken(); //increment past semicolon
 }
 
-static void closeScope() {
+static void closeScope(void) {
 	--scope_depth;
 	if (scope_depth <= 0) return; //functions dont need closing
 
@@ -874,7 +874,7 @@ static void closeScope() {
 
 //starts on first token of statement
 //ends on first token of next statement
-static void parseStatement() {
+static void parseStatement(void) {
 	switch (currentToken().type) {
 		
 		case TOKEN_IDENTIFIER: parseIdentifier(); return;
@@ -892,7 +892,7 @@ static void parseStatement() {
 
 //starts on first token of statement
 //ends on first token of next top level statement
-static void parseTopLevelStatement() {
+static void parseTopLevelStatement(void) {
 	switch (currentToken().type) {
 		case TOKEN_FN: parseFunctionDefinition(); return;
 
@@ -900,7 +900,7 @@ static void parseTopLevelStatement() {
 	}
 }
 
-void parseTokens() {
+void parseTokens(void) {
 	//setup
 	initialiseParsingTables();
 
