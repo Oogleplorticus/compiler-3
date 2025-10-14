@@ -2,8 +2,6 @@
 
 #include <stdio.h>
 
-#include "identifier_table.h"
-
 static const char* tokenTypeToString(TokenType type) {
 	switch (type) {
 		case TOKEN_NONE: return "TOKEN_UNDETERMINED";
@@ -80,8 +78,7 @@ void printToken(Token token) {
 	
 	switch (token.type) {
 		case TOKEN_IDENTIFIER:;
-		Identifier identifier = getIdentifierFromID(token.data.identifier_ID);
-		printf(", identifier ID: %zu, identifier name: %.*s}", token.data.identifier_ID, (int)identifier.name_length, identifier.name);
+		printf(", identifier: %s}", token.data.identifier);
 		break;
 
 		case TOKEN_INTEGER_TYPE:

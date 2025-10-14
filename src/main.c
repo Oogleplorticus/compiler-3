@@ -4,8 +4,7 @@
 #include <string.h>
 
 #include "compilation_unit.h"
-#include "declaration_parser.h"
-#include "definition_parser.h"
+#include "parser_top_level.h"
 
 int main(int argc, char* argv[]) {
 	//handle command line arguments
@@ -23,8 +22,7 @@ int main(int argc, char* argv[]) {
 	LLVMSetTarget(compilation_unit.llvm_module, "x86_64-pc-linux-gnu"); //assume target
 
 	//compile
-	parseDeclarations(&compilation_unit);
-	parseDefinitions(&compilation_unit);
+	parseTopLevel(&compilation_unit);
 
 	//output result
 	char output_path[strlen(source_path) + sizeof(".ll")];

@@ -1,3 +1,4 @@
+/*
 #include "parser.h"
 
 #include <llvm-c/Types.h>
@@ -923,3 +924,4 @@ void parseTokens(void) {
 	//free memory
 	freeParsingTables();
 }
+*/

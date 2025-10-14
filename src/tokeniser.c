@@ -7,7 +7,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "identifier_table.h"
 #include "token.h"
 
 static FILE* source;
@@ -368,7 +367,13 @@ static void getIdentifierOrKeyword(Token* token) {
 
 	//we can now assume its an identifier
 	token->type = TOKEN_IDENTIFIER;
-	token->data.identifier_ID = getOrAddIdentifier(buffer, token->length_in_source).ID;
+	token->data.identifier = malloc((token->length_in_source + 1) * sizeof(char));
+	if (token->data.identifier == NULL) {
+		printf("ERROR: Failed to allocate memory for token identifier!\n");
+		exit(1);
+	}
+	memccpy(token->data.identifier, buffer, sizeof(char), token->length_in_source);
+	token->data.identifier[token->length_in_source] = '\0';
 }
 
 static Token getToken(size_t search_index) {
@@ -451,8 +456,6 @@ void tokeniserSetSource(FILE* new_source) {
 	line_number = 1;
 	column_number = 1;
 
-	resetIdentifierTable();
-
 	//initialise tokens
 	current_token = getToken(0);
 	size_t next_token_search_index = current_token.offset_in_source + current_token.length_in_source;
@@ -471,6 +474,10 @@ void incrementToken(void) {
 	//free string literal token data
 	if (current_token.type == TOKEN_STRING_LITERAL) {
 		free(current_token.data.string.text);
+	}
+	//free token identifier
+	if (current_token.type == TOKEN_IDENTIFIER) {
+		free(current_token.data.identifier);
 	}
 	//update tokens
 	current_token = next_token;
