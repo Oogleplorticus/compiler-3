@@ -9,51 +9,100 @@
 #include "token.h"
 #include "tokeniser.h"
 
-//starts on opening brace
-static void skipScope() {
-	if (currentToken().type != TOKEN_BRACE_LEFT) {
-		UNEXPECTED_TOKEN(currentToken());
-	}
+//starts on fn keyword
+static void parseFunctionDeclaration(CompilationUnit* compilation_unit) {
+	ASSERT_CURRENT_TOKEN(TOKEN_FN);
+	ASSERT_NEXT_TOKEN(TOKEN_IDENTIFIER);
 	incrementToken();
 
-	size_t depth = 0;
-	while (currentToken().type != TOKEN_EOF) {
-		switch (currentToken().type) {
-			case TOKEN_BRACE_LEFT:
-			++depth;
-			break;
+	//create function and get identifier
+	Function* function = compilationUnit_addFunction(compilation_unit);
+	function->identifier = compilationUnit_getOrAddIdentifier(compilation_unit, currentToken().data.identifier);
 
-			case TOKEN_BRACE_RIGHT:
-			if (depth <= 0) return;
-			--depth;
-			break;
+	ASSERT_NEXT_TOKEN(TOKEN_PARENTHESIS_LEFT);
+	incrementToken();
+	incrementToken();
+	
+	//TODO handle parameters
+	incrementToken();
 
-			default: break;
-		}
+	//TODO handle tags
 
+	//get return type
+	if (currentToken().type == TOKEN_BRACE_LEFT) {
+		//no return type
+		function->returnType.kind = TYPE_VOID;
+		function->returnType.data.width = 0;
+
+	} else if (currentToken().type == TOKEN_MINUS_GREATER) {
+		//explicit return type
+		//TODO special handling for user defined types
 		incrementToken();
+		switch (currentToken().type) {
+			case TOKEN_INTEGER_TYPE:   function->returnType.kind = TYPE_INT; break;
+			case TOKEN_UNSIGNED_TYPE:  function->returnType.kind = TYPE_UNSIGNED; break;
+			case TOKEN_FLOAT_TYPE:     function->returnType.kind = TYPE_FLOAT; break;
+			case TOKEN_BOOL_TYPE:      function->returnType.kind = TYPE_BOOL; break;
+			case TOKEN_CHARACTER_TYPE: function->returnType.kind = TYPE_CHAR; break;
+
+			default: UNEXPECTED_TOKEN(currentToken());
+		}
+		function->returnType.data.width = currentToken().data.type_width;
+
+	} else {
+		UNEXPECTED_TOKEN(currentToken());
 	}
 
-	printf("ERROR: Hit EOF while skipping over scope! Ensure all scopes are properly closed!\n");
-	exit(1);
+	//skip function body
+	incrementToken();
+	ASSERT_CURRENT_TOKEN(TOKEN_BRACE_LEFT);
+	skipScope();
+	incrementToken();
 }
 
-static void parseFunctionDeclaration(CompilationUnit* compilation_unit) {
-
-}
-
-static void parseStructDefinition(CompilationUnit* compilation_unit) {
-	
-}
-
-static void parseTopLevelStatement(CompilationUnit* compilation_unit) {
+static void parseNonStructs(CompilationUnit* compilation_unit) {
 	switch (currentToken().type) {
 		case TOKEN_FN:
 		parseFunctionDeclaration(compilation_unit);
 		return;
 
 		case TOKEN_STRUCT:
+		//skip declaration
+		while (currentToken().type != TOKEN_BRACE_LEFT) {
+			incrementToken();
+		}
+		//skip definition
+		skipScope();
+		incrementToken();
+		return;
+
+		default: UNEXPECTED_TOKEN(currentToken());
+	}
+}
+
+//starts on struct keyword
+static void parseStructDefinition(CompilationUnit* compilation_unit) {
+	ASSERT_CURRENT_TOKEN(TOKEN_STRUCT);
+	incrementToken();
+
+	printf("ERROR: Attempted to parse currently unsupported struct!\n");
+	exit(1);
+}
+
+static void parseStructs(CompilationUnit* compilation_unit) {
+	switch (currentToken().type) {
+		case TOKEN_STRUCT:
 		parseStructDefinition(compilation_unit);
+		return;
+
+		case TOKEN_FN:
+		//skip declaration
+		while (currentToken().type != TOKEN_BRACE_LEFT) {
+			incrementToken();
+		}
+		//skip definition
+		skipScope();
+		incrementToken();
 		return;
 
 		default: UNEXPECTED_TOKEN(currentToken());
@@ -63,7 +112,12 @@ static void parseTopLevelStatement(CompilationUnit* compilation_unit) {
 void parseTopLevel(CompilationUnit* compilation_unit) {
 	tokeniserSetSource(compilation_unit->source_file);
 
+	//parse structs first since they can be included as return types and static variable values
 	while (currentToken().type != TOKEN_EOF) {
-		parseTopLevelStatement(compilation_unit);
+		parseStructs(compilation_unit);
+	}
+
+	while (currentToken().type != TOKEN_EOF) {
+		parseNonStructs(compilation_unit);
 	}
 }

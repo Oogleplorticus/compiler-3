@@ -18,6 +18,7 @@ typedef enum {
 	TYPE_FLOAT,
 	TYPE_CHAR,
 	TYPE_BOOL,
+	TYPE_VOID,
 	TYPE_STRUCT,
 } TypeKind;
 
@@ -61,6 +62,7 @@ struct Scope {
 
 typedef struct {
 	char* identifier; //in compilation unit member "identifiers", do not allocate new memory
+	VariableType returnType;
 
 	Scope* scopes;
 } Function;
