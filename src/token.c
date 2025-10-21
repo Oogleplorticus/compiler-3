@@ -38,6 +38,8 @@ static const char* tokenTypeToString(TokenType type) {
 		case TOKEN_SEMICOLON: return "TOKEN_SEMICOLON";
 		case TOKEN_COLON: return "TOKEN_COLON";
 		case TOKEN_COMMA: return "TOKEN_COMMA";
+		case TOKEN_MINUS_GREATER: return "TOKEN_MINUS_GREATER";
+
 		case TOKEN_EQUAL: return "TOKEN_EQUAL";
 		case TOKEN_PLUS: return "TOKEN_PLUS";
 		case TOKEN_MINUS: return "TOKEN_MINUS";

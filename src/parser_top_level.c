@@ -1,5 +1,7 @@
 #include "parser_top_level.h"
 
+#include <llvm-c/Core.h>
+#include <llvm-c/Types.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -11,6 +13,8 @@
 
 //starts on fn keyword
 static void parseFunctionDeclaration(CompilationUnit* compilation_unit) {
+	if (currentToken().type == TOKEN_COMMA) incrementToken();
+
 	ASSERT_CURRENT_TOKEN(TOKEN_FN);
 	ASSERT_NEXT_TOKEN(TOKEN_IDENTIFIER);
 	incrementToken();
@@ -23,7 +27,32 @@ static void parseFunctionDeclaration(CompilationUnit* compilation_unit) {
 	incrementToken();
 	incrementToken();
 	
-	//TODO handle parameters
+	//handle parameters
+	while (currentToken().type != TOKEN_PARENTHESIS_RIGHT) {
+		ASSERT_CURRENT_TOKEN(TOKEN_IDENTIFIER);
+		ASSERT_NEXT_TOKEN(TOKEN_COLON);
+
+		//create parameter and assign identifier
+		Variable* parameter = compilationUnit_addFunctionParameter(function);
+		parameter->identifier = compilationUnit_getOrAddIdentifier(compilation_unit, currentToken().data.identifier);
+		
+		incrementToken();
+		incrementToken();
+
+		//assign parameter type
+		if (currentToken().type == TOKEN_IDENTIFIER) {
+			//TODO support structs
+			printf("ERROR: structs not yet supported!\n");
+			UNEXPECTED_TOKEN(currentToken());
+		} else {
+			parameter->type = variableTypeFromToken(currentToken());
+		}
+
+		//TODO handle tags
+		while (currentToken().type != TOKEN_COMMA && currentToken().type != TOKEN_PARENTHESIS_RIGHT) {
+			incrementToken();
+		}
+	}
 	incrementToken();
 
 	//TODO handle tags
@@ -48,16 +77,24 @@ static void parseFunctionDeclaration(CompilationUnit* compilation_unit) {
 			default: UNEXPECTED_TOKEN(currentToken());
 		}
 		function->returnType.data.width = currentToken().data.type_width;
+		incrementToken();
 
 	} else {
 		UNEXPECTED_TOKEN(currentToken());
 	}
 
 	//skip function body
-	incrementToken();
 	ASSERT_CURRENT_TOKEN(TOKEN_BRACE_LEFT);
 	skipScope();
 	incrementToken();
+
+	//create llvm function
+	function->llvm_function_type = llvmFunctionTypeFromFunction(compilation_unit->llvm_context, function);
+	function->llvm_function = LLVMAddFunction(
+		compilation_unit->llvm_module,
+		function->identifier,
+		function->llvm_function_type
+	);
 }
 
 static void parseNonStructs(CompilationUnit* compilation_unit) {
@@ -82,6 +119,8 @@ static void parseNonStructs(CompilationUnit* compilation_unit) {
 
 //starts on struct keyword
 static void parseStructDefinition(CompilationUnit* compilation_unit) {
+	(void)compilation_unit;
+
 	ASSERT_CURRENT_TOKEN(TOKEN_STRUCT);
 	incrementToken();
 
@@ -116,6 +155,8 @@ void parseTopLevel(CompilationUnit* compilation_unit) {
 	while (currentToken().type != TOKEN_EOF) {
 		parseStructs(compilation_unit);
 	}
+
+	tokeniserSetSource(compilation_unit->source_file); //reset for next run
 
 	while (currentToken().type != TOKEN_EOF) {
 		parseNonStructs(compilation_unit);

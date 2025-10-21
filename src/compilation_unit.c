@@ -6,7 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define INITIAL_LIST_CAPACITY 16
+#define INITIAL_LIST_CAPACITY 1
 
 /*
 
@@ -51,21 +51,33 @@ CompilationUnit compilationUnit_create(const char* source_path, LLVMContextRef l
 	compilation_unit.identifier_capacity = INITIAL_LIST_CAPACITY;
 	size_t identifiers_size = sizeof(compilation_unit.identifiers[0]) * INITIAL_LIST_CAPACITY;
 	compilation_unit.identifiers = malloc(identifiers_size);
+	if (compilation_unit.identifiers == NULL) {
+		printf("ERROR: Failed to allocate memory for compilation unit identifiers!\n");
+	}
 	memset(compilation_unit.identifiers, 0, identifiers_size);
 	//structs
 	compilation_unit.struct_capacity = INITIAL_LIST_CAPACITY;
 	size_t structs_size = sizeof(compilation_unit.structs[0]) * INITIAL_LIST_CAPACITY;
 	compilation_unit.structs = malloc(structs_size);
+	if (compilation_unit.structs == NULL) {
+		printf("ERROR: Failed to allocate memory for compilation unit structs!\n");
+	}
 	memset(compilation_unit.structs, 0, structs_size);
 	//variables
-	compilation_unit.variable_capacity = INITIAL_LIST_CAPACITY;
-	size_t variables_size = sizeof(compilation_unit.variables[0]) * INITIAL_LIST_CAPACITY;
-	compilation_unit.variables = malloc(variables_size);
-	memset(compilation_unit.variables, 0, variables_size);
+	compilation_unit.global_variable_capacity = INITIAL_LIST_CAPACITY;
+	size_t variables_size = sizeof(compilation_unit.global_variables[0]) * INITIAL_LIST_CAPACITY;
+	compilation_unit.global_variables = malloc(variables_size);
+	if (compilation_unit.global_variables == NULL) {
+		printf("ERROR: Failed to allocate memory for compilation unit global variables!\n");
+	}
+	memset(compilation_unit.global_variables, 0, variables_size);
 	//functions
 	compilation_unit.function_capacity = INITIAL_LIST_CAPACITY;
 	size_t functions_size = sizeof(compilation_unit.functions[0]) * INITIAL_LIST_CAPACITY;
 	compilation_unit.functions = malloc(functions_size);
+	if (compilation_unit.functions == NULL) {
+		printf("ERROR: Failed to allocate memory for compilation unit functions!\n");
+	}
 	memset(compilation_unit.functions, 0, functions_size);
 
 	return compilation_unit;
@@ -156,23 +168,23 @@ StructType* compilationUnit_addStructType(CompilationUnit* compilation_unit) {
 
 Variable* compilationUnit_addVariable(CompilationUnit* compilation_unit) {
 	//if at capacity then double capacity
-	if (compilation_unit->variable_count >= compilation_unit->variable_capacity) {
+	if (compilation_unit->global_variable_count >= compilation_unit->global_variable_capacity) {
 		//attempt to double size
-		size_t new_size = compilation_unit->variable_capacity * sizeof(compilation_unit->variables[0]) * 2;
-		Variable* new_list = realloc(compilation_unit->variables, new_size);
+		size_t new_size = compilation_unit->global_variable_capacity * sizeof(compilation_unit->global_variables[0]) * 2;
+		Variable* new_list = realloc(compilation_unit->global_variables, new_size);
 		if (new_list == NULL) {
 			printf("ERROR: Failed to double capacity of identifiers list!\n");
 			exit(1);
 		}
 		//set list and capacity if successful
-		compilation_unit->variables = new_list;
-		compilation_unit->variable_capacity *= 2;
+		compilation_unit->global_variables = new_list;
+		compilation_unit->global_variable_capacity *= 2;
 	}
 
 	//get new element and increment count
-	Variable* new_variable = compilation_unit->variables + compilation_unit->variable_count;
+	Variable* new_variable = compilation_unit->global_variables + compilation_unit->global_variable_count;
 	memset(new_variable, 0, sizeof(*new_variable));
-	++compilation_unit->variable_count;
+	++compilation_unit->global_variable_count;
 
 	return new_variable;
 }
@@ -197,5 +209,101 @@ Function* compilationUnit_addFunction(CompilationUnit* compilation_unit) {
 	memset(new_function, 0, sizeof(*new_function));
 	++compilation_unit->function_count;
 
+	//allocate initial memory for scope array
+	new_function->scope_capacity = INITIAL_LIST_CAPACITY;
+	size_t scopes_size = sizeof(new_function->scopes[0]) * INITIAL_LIST_CAPACITY;
+	new_function->scopes = malloc(scopes_size);
+	if (new_function->scopes == NULL) {
+		printf("ERROR: Failed to allocate memory for function scopes!\n");
+	}
+	memset(new_function->scopes, 0, scopes_size);
+
+	//allocate initial memory for parameter array
+	new_function->parameter_capacity = INITIAL_LIST_CAPACITY;
+	size_t parameters_size = sizeof(new_function->parameters[0]) * INITIAL_LIST_CAPACITY;
+	new_function->parameters = malloc(parameters_size);
+	if (new_function->parameters == NULL) {
+		printf("ERROR: Failed to allocate memory for function parameters!\n");
+	}
+	memset(new_function->parameters, 0, parameters_size);
+
 	return new_function;
+}
+
+Variable* compilationUnit_addFunctionParameter(Function* function) {
+	//if at capacity then double capacity
+	if (function->parameter_count >= function->parameter_capacity) {
+		//attempt to double size
+		size_t new_size = function->parameter_capacity * sizeof(function->parameters[0]) * 2;
+		Variable* new_list = realloc(function->parameters, new_size);
+		if (new_list == NULL) {
+			printf("ERROR: Failed to double capacity of identifiers list!\n");
+			exit(1);
+		}
+		//set list and capacity if successful
+		function->parameters = new_list;
+		function->parameter_capacity *= 2;
+	}
+
+	//get new element and increment count
+	Variable* new_parameter = function->parameters + function->parameter_count;
+	memset(new_parameter, 0, sizeof(*new_parameter));
+	++function->parameter_count;
+
+	return new_parameter;
+}
+
+Scope* compilationUnit_addFunctionScope(Function* function) {
+	//if at capacity then double capacity
+	if (function->scope_count >= function->scope_capacity) {
+		//attempt to double size
+		size_t new_size = function->scope_capacity * sizeof(function->scopes[0]) * 2;
+		Scope* new_list = realloc(function->scopes, new_size);
+		if (new_list == NULL) {
+			printf("ERROR: Failed to double capacity of identifiers list!\n");
+			exit(1);
+		}
+		//set list and capacity if successful
+		function->scopes = new_list;
+		function->scope_capacity *= 2;
+	}
+
+	//get new element and increment count
+	Scope* new_scope = function->scopes + function->scope_count;
+	memset(new_scope, 0, sizeof(*new_scope));
+	++function->scope_count;
+
+	//allocate initial memory for variable array
+	new_scope->variable_capacity = INITIAL_LIST_CAPACITY;
+	size_t variables_size = sizeof(new_scope->variables[0]) * INITIAL_LIST_CAPACITY;
+	new_scope->variables = malloc(variables_size);
+	if (new_scope->variables == NULL) {
+		printf("ERROR: Failed to allocate memory for scope variables!\n");
+	}
+	memset(new_scope->variables, 0, variables_size);
+
+	return new_scope;
+}
+
+Variable* compilationUnit_addScopeVariable(Scope* scope) {
+	//if at capacity then double capacity
+	if (scope->variable_count >= scope->variable_capacity) {
+		//attempt to double size
+		size_t new_size = scope->variable_capacity * sizeof(scope->variables[0]) * 2;
+		Variable* new_list = realloc(scope->variables, new_size);
+		if (new_list == NULL) {
+			printf("ERROR: Failed to double capacity of identifiers list!\n");
+			exit(1);
+		}
+		//set list and capacity if successful
+		scope->variables = new_list;
+		scope->variable_capacity *= 2;
+	}
+
+	//get new element and increment count
+	Variable* new_variable = scope->variables + scope->variable_count;
+	memset(new_variable, 0, sizeof(*new_variable));
+	++scope->variable_count;
+
+	return new_variable;
 }

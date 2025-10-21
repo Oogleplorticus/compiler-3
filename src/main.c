@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "compilation_unit.h"
+#include "parser_blocks.h"
 #include "parser_top_level.h"
 
 int main(int argc, char* argv[]) {
@@ -23,6 +24,7 @@ int main(int argc, char* argv[]) {
 
 	//compile
 	parseTopLevel(&compilation_unit);
+	//parseBlocks(&compilation_unit);
 
 	//output result
 	char output_path[strlen(source_path) + sizeof(".ll")];

@@ -49,22 +49,32 @@ Variable and function structs
 */
 
 typedef struct {
-
+	char* identifier; //in compilation unit member "identifiers", do not allocate new memory
 	VariableType type;
 } Variable;
 
 typedef struct Scope Scope;
 struct Scope {
 	Scope* parent_scope; //in parent function member "scopes", do not allocate new memory
-	Variable** variables; //in compilation unit member "variables", do not allocate new memory
+	Variable* variables;
 	size_t variable_count;
+	size_t variable_capacity;
 };
 
 typedef struct {
 	char* identifier; //in compilation unit member "identifiers", do not allocate new memory
+	Variable* parameters;
+	size_t parameter_count;
+	size_t parameter_capacity;
 	VariableType returnType;
 
 	Scope* scopes;
+	size_t scope_count;
+	size_t scope_capacity;
+
+	//llvm data
+	LLVMTypeRef llvm_function_type;
+	LLVMValueRef llvm_function;
 } Function;
 
 /*
@@ -91,9 +101,9 @@ typedef struct {
 	size_t struct_count;
 	size_t struct_capacity;
 
-	Variable* variables;
-	size_t variable_count;
-	size_t variable_capacity;
+	Variable* global_variables;
+	size_t global_variable_count;
+	size_t global_variable_capacity;
 
 	Function* functions;
 	size_t function_count;
@@ -113,5 +123,9 @@ void compilationUnit_destroy(CompilationUnit* compilation_unit);
 //member list modification
 char* compilationUnit_getOrAddIdentifier(CompilationUnit* compilation_unit, const char* identifier);
 StructType* compilationUnit_addStructType(CompilationUnit* compilation_unit);
-Variable* compilationUnit_addVariable(CompilationUnit* compilation_unit);
+Variable* compilationUnit_addGlobalVariable(CompilationUnit* compilation_unit);
+
 Function* compilationUnit_addFunction(CompilationUnit* compilation_unit);
+Variable* compilationUnit_addFunctionParameter(Function* function);
+Scope* compilationUnit_addFunctionScope(Function* function);
+Variable* compilationUnit_addScopeVariable(Scope* scope);
