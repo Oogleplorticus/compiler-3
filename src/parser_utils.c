@@ -128,6 +128,10 @@ LLVMTypeRef llvmTypeFromVariableType(LLVMContextRef llvm_context, VariableType v
 		case TYPE_STRUCT:
 		printf("ERROR: structs not yet supported!\n");
 		exit(1);
+
+		case TYPE_NONE:
+		printf("ERROR: Attempted to get llvm type reference from invalid \"TYPE_NONE\"!\n");
+		exit(1);
 	}
 }
 
@@ -143,4 +147,50 @@ LLVMTypeRef llvmFunctionTypeFromFunction(LLVMContextRef llvm_context, Function* 
 		function->parameter_count,
 		false
 	);
+}
+
+//larger number = greater precedence
+size_t operatorPrecedence(TokenType operator_type) {
+	switch (operator_type) {
+		case TOKEN_NONE: return 0;
+	
+		case TOKEN_EQUAL: return 1;
+	
+		case TOKEN_PLUS: return 10;
+		case TOKEN_MINUS: return 10;
+		case TOKEN_STAR: return 11;
+		case TOKEN_FORWARD_SLASH: return 11;
+		case TOKEN_PERCENT: return 11;
+	
+		case TOKEN_AMPERSAND: return 6;
+		case TOKEN_BAR: return 4;
+		case TOKEN_CARET: return 5;
+		case TOKEN_TILDE: return 12;
+		case TOKEN_LESS_LESS: return 9;
+		case TOKEN_GREATER_GREATER: return 9;
+	
+		case TOKEN_PLUS_EQUAL: return 1;
+		case TOKEN_MINUS_EQUAL: return 1;
+		case TOKEN_STAR_EQUAL: return 1;
+		case TOKEN_FORWARD_SLASH_EQUAL: return 1;
+		case TOKEN_PERCENT_EQUAL: return 1;
+	
+		case TOKEN_AMPERSAND_EQUAL: return 1;
+		case TOKEN_BAR_EQUAL: return 1;
+		case TOKEN_CARET_EQUAL: return 1;
+		case TOKEN_TILDE_TILDE: return 1;
+		case TOKEN_LESS_LESS_EQUAL: return 1;
+		case TOKEN_GREATER_GREATER_EQUAL: return 1;
+	
+		case TOKEN_EQUAL_EQUAL: return 7;
+		case TOKEN_EXCLAMATION_EQUAL: return 7;
+		case TOKEN_LESS: return 8;
+		case TOKEN_GREATER: return 8;
+		case TOKEN_LESS_EQUAL: return 8;
+		case TOKEN_GREATER_EQUAL: return 8;
+
+		default:
+		printf("ERROR: Tried to get precedence of unsupported operator %d!\n", operator_type);
+		exit(1);
+	}
 }

@@ -31,11 +31,14 @@ static const Keyword KEYWORD_TABLE[] = {
 	{"for", sizeof("for") - sizeof(char), TOKEN_FOR},
 	{"return", sizeof("return") - sizeof(char), TOKEN_RETURN},
 
-	//not technically keywords but works best here since they have set sizes
+	//not technically keywords but works best here
 	{"isize", sizeof("isize") - sizeof(char), TOKEN_INTEGER_TYPE},
 	{"usize", sizeof("usize") - sizeof(char), TOKEN_UNSIGNED_TYPE},
 	{"bool", sizeof("bool") - sizeof(char), TOKEN_BOOL_TYPE},
 	{"char", sizeof("char") - sizeof(char), TOKEN_CHARACTER_TYPE},
+
+	{"true", sizeof("true") - sizeof(char), TOKEN_TRUE},
+	{"false", sizeof("false") - sizeof(char), TOKEN_FALSE},
 };
 static const size_t KEYWORD_TABLE_LENGTH = sizeof(KEYWORD_TABLE) / sizeof(KEYWORD_TABLE[0]);
 //buffer should not be null terminated
@@ -87,6 +90,7 @@ static const Punctuation PUNCTUATION_TABLE[] = {
 	{":", sizeof(":") - sizeof(char), TOKEN_COLON},
 	{",", sizeof(",") - sizeof(char), TOKEN_COMMA},
 	{"=", sizeof("=") - sizeof(char), TOKEN_EQUAL},
+	{".", sizeof(".") - sizeof(char), TOKEN_DOT},
 	{"+", sizeof("+") - sizeof(char), TOKEN_PLUS},
 	{"-", sizeof("-") - sizeof(char), TOKEN_MINUS},
 	{"*", sizeof("*") - sizeof(char), TOKEN_STAR},

@@ -13,6 +13,8 @@ Variable and struct type structs/enum
 */
 
 typedef enum {
+	TYPE_NONE, //special case
+
 	TYPE_INT,
 	TYPE_UNSIGNED,
 	TYPE_FLOAT,
@@ -22,7 +24,9 @@ typedef enum {
 	TYPE_STRUCT,
 } TypeKind;
 
-typedef struct StructType StructType; //forward declaration
+//forward declarations
+typedef struct StructType StructType;
+typedef struct Function Function;
 
 typedef struct {
 	TypeKind kind;
@@ -51,17 +55,22 @@ Variable and function structs
 typedef struct {
 	char* identifier; //in compilation unit member "identifiers", do not allocate new memory
 	VariableType type;
+
+	//llvm data
+	LLVMValueRef llvm_stack_pointer;
+	LLVMTypeRef llvm_type;
 } Variable;
 
 typedef struct Scope Scope;
 struct Scope {
+	Function* parent_function; //in compilation unit member "functions", do not allocate new memory
 	Scope* parent_scope; //in parent function member "scopes", do not allocate new memory
 	Variable* variables;
 	size_t variable_count;
 	size_t variable_capacity;
 };
 
-typedef struct {
+struct Function {
 	char* identifier; //in compilation unit member "identifiers", do not allocate new memory
 	Variable* parameters;
 	size_t parameter_count;
@@ -75,7 +84,8 @@ typedef struct {
 	//llvm data
 	LLVMTypeRef llvm_function_type;
 	LLVMValueRef llvm_function;
-} Function;
+	LLVMBasicBlockRef llvm_entry_block;
+};
 
 /*
 
@@ -129,3 +139,6 @@ Function* compilationUnit_addFunction(CompilationUnit* compilation_unit);
 Variable* compilationUnit_addFunctionParameter(Function* function);
 Scope* compilationUnit_addFunctionScope(Function* function);
 Variable* compilationUnit_addScopeVariable(Scope* scope);
+
+//member list lookup
+Variable* compilationUnit_findVariableFromScope(CompilationUnit* compilation_unit, Scope* scope, char* variable_identifier);

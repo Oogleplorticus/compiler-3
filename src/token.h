@@ -33,6 +33,9 @@ typedef enum {
 	TOKEN_CHARACTER_LITERAL,
 	TOKEN_STRING_LITERAL,
 
+	TOKEN_TRUE,
+	TOKEN_FALSE,
+
 	//delimiters
 	TOKEN_PARENTHESIS_LEFT,
 	TOKEN_PARENTHESIS_RIGHT,
@@ -48,6 +51,7 @@ typedef enum {
 	//operators
 	//misc
 	TOKEN_EQUAL,
+	TOKEN_DOT,
 	//arithmetic
 	TOKEN_PLUS,
 	TOKEN_MINUS,
@@ -101,4 +105,5 @@ typedef struct {
 	} data;
 } Token;
 
+const char* tokenTypeToString(TokenType type);
 void printToken(Token token);

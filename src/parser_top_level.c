@@ -29,6 +29,8 @@ static void parseFunctionDeclaration(CompilationUnit* compilation_unit) {
 	
 	//handle parameters
 	while (currentToken().type != TOKEN_PARENTHESIS_RIGHT) {
+		if (currentToken().type == TOKEN_COMMA) incrementToken();
+
 		ASSERT_CURRENT_TOKEN(TOKEN_IDENTIFIER);
 		ASSERT_NEXT_TOKEN(TOKEN_COLON);
 

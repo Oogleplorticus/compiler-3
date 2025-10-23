@@ -24,7 +24,7 @@ int main(int argc, char* argv[]) {
 
 	//compile
 	parseTopLevel(&compilation_unit);
-	//parseBlocks(&compilation_unit);
+	parseBlocks(&compilation_unit);
 
 	//output result
 	char output_path[strlen(source_path) + sizeof(".ll")];

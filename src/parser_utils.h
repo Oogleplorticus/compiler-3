@@ -22,3 +22,5 @@ VariableType variableTypeFromToken(Token token);
 
 LLVMTypeRef llvmTypeFromVariableType(LLVMContextRef llvm_context, VariableType variable_type);
 LLVMTypeRef llvmFunctionTypeFromFunction(LLVMContextRef llvm_context, Function* function);
+
+size_t operatorPrecedence(TokenType operator_type);

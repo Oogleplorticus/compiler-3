@@ -10,7 +10,7 @@
 
 /*
 
-creation/destruction functions
+creation/destruction
 
 */
 
@@ -103,7 +103,7 @@ void compilationUnit_destroy(CompilationUnit* compilation_unit) {
 
 /*
 
-member list modification functions
+member list modification
 
 */
 
@@ -282,6 +282,9 @@ Scope* compilationUnit_addFunctionScope(Function* function) {
 	}
 	memset(new_scope->variables, 0, variables_size);
 
+	//initialise required members
+	new_scope->parent_function = function;
+
 	return new_scope;
 }
 
@@ -306,4 +309,44 @@ Variable* compilationUnit_addScopeVariable(Scope* scope) {
 	++scope->variable_count;
 
 	return new_variable;
+}
+
+/*
+
+member list lookup
+
+*/
+
+Variable* compilationUnit_findVariableFromScope(CompilationUnit* compilation_unit, Scope* scope, char* variable_identifier) {
+	//check pointer valid
+	if (scope == NULL) return NULL;
+
+	//check for variable in this scope
+	for (size_t i = 0; i < scope->variable_count; ++i) {
+		if (variable_identifier == scope->variables[i].identifier) {
+			return scope->variables + i;
+		}
+	}
+
+	//if no parent scope check function parameters and globals
+	if (scope->parent_scope == NULL) {
+		//parameters
+		for (size_t i = 0; i < scope->parent_function->parameter_count; ++i) {
+			if (variable_identifier == scope->parent_function->parameters[i].identifier) {
+				return scope->parent_function->parameters + i;
+			}
+		}
+		//globals
+		for (size_t i = 0; i < compilation_unit->global_variable_count; ++i) {
+			if (variable_identifier == compilation_unit->global_variables[i].identifier) {
+				return compilation_unit->global_variables + i;
+			}
+		}
+
+		//if not found by now, variable does not exist
+		return NULL;
+	}
+
+	//check for variable in parent scope
+	return compilationUnit_findVariableFromScope(compilation_unit, scope->parent_scope, variable_identifier);
 }

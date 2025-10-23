@@ -2,7 +2,7 @@
 
 #include <stdio.h>
 
-static const char* tokenTypeToString(TokenType type) {
+const char* tokenTypeToString(TokenType type) {
 	switch (type) {
 		case TOKEN_NONE: return "TOKEN_UNDETERMINED";
 		case TOKEN_EOF: return "TOKEN_EOF";
@@ -29,6 +29,9 @@ static const char* tokenTypeToString(TokenType type) {
 		case TOKEN_CHARACTER_LITERAL: return "TOKEN_CHARACTER_LITERAL";
 		case TOKEN_STRING_LITERAL: return "TOKEN_STRING_LITERAL";
 
+		case TOKEN_TRUE: return "TOKEN_TRUE";
+		case TOKEN_FALSE: return "TOKEN_FALSE";
+
 		case TOKEN_PARENTHESIS_LEFT: return "TOKEN_PARENTHESIS_LEFT";
 		case TOKEN_PARENTHESIS_RIGHT: return "TOKEN_PARENTHESIS_RIGHT";
 		case TOKEN_BRACKET_LEFT: return "TOKEN_BRACKET_LEFT";
@@ -41,6 +44,7 @@ static const char* tokenTypeToString(TokenType type) {
 		case TOKEN_MINUS_GREATER: return "TOKEN_MINUS_GREATER";
 
 		case TOKEN_EQUAL: return "TOKEN_EQUAL";
+		case TOKEN_DOT: return "TOKEN_DOT";
 		case TOKEN_PLUS: return "TOKEN_PLUS";
 		case TOKEN_MINUS: return "TOKEN_MINUS";
 		case TOKEN_STAR: return "TOKEN_STAR";
