@@ -21,7 +21,7 @@ static void parseFunctionDeclaration(CompilationUnit* compilation_unit) {
 
 	//create function and get identifier
 	Function* function = compilationUnit_addFunction(compilation_unit);
-	function->identifier = compilationUnit_getOrAddIdentifier(compilation_unit, currentToken().data.identifier);
+	function->identifier_index = compilationUnit_getOrAddIdentifierIndex(compilation_unit, currentToken().data.identifier);
 
 	ASSERT_NEXT_TOKEN(TOKEN_PARENTHESIS_LEFT);
 	incrementToken();
@@ -36,7 +36,7 @@ static void parseFunctionDeclaration(CompilationUnit* compilation_unit) {
 
 		//create parameter and assign identifier
 		Variable* parameter = compilationUnit_addFunctionParameter(function);
-		parameter->identifier = compilationUnit_getOrAddIdentifier(compilation_unit, currentToken().data.identifier);
+		parameter->identifier_index = compilationUnit_getOrAddIdentifierIndex(compilation_unit, currentToken().data.identifier);
 		
 		incrementToken();
 		incrementToken();
@@ -94,7 +94,7 @@ static void parseFunctionDeclaration(CompilationUnit* compilation_unit) {
 	function->llvm_function_type = llvmFunctionTypeFromFunction(compilation_unit->llvm_context, function);
 	function->llvm_function = LLVMAddFunction(
 		compilation_unit->llvm_module,
-		function->identifier,
+		compilation_unit->identifiers[function->identifier_index],
 		function->llvm_function_type
 	);
 }

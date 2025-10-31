@@ -6,6 +6,9 @@
 #include <stddef.h>
 #include <stdio.h>
 
+//used as an equivalent of null for indexes
+#define NULL_INDEX ((size_t)-1)
+
 /*
 
 Variable and struct type structs/enum
@@ -37,12 +40,12 @@ typedef struct {
 } VariableType;
 
 typedef struct {
-	char* identifier; //in compilation unit member "identifiers", do not allocate new memory
+	size_t identifier_index; //in compilation unit member "identifiers"
 	VariableType type;
 } StructMember;
 
 struct StructType {
-	char* identifier; //in compilation unit member "identifiers", do not allocate new memory
+	size_t identifier_index; //in compilation unit member "identifiers"
 	StructMember* members;
 };
 
@@ -53,7 +56,7 @@ Variable and function structs
 */
 
 typedef struct {
-	char* identifier; //in compilation unit member "identifiers", do not allocate new memory
+	size_t identifier_index; //in compilation unit member "identifiers"
 	VariableType type;
 
 	//llvm data
@@ -63,15 +66,15 @@ typedef struct {
 
 typedef struct Scope Scope;
 struct Scope {
-	Function* parent_function; //in compilation unit member "functions", do not allocate new memory
-	Scope* parent_scope; //in parent function member "scopes", do not allocate new memory
+	size_t parent_function_index; //in compilation unit member "functions", will be initialised by creation function
+	size_t parent_scope_index; //in parent function member "scopes"
 	Variable* variables;
 	size_t variable_count;
 	size_t variable_capacity;
 };
 
 struct Function {
-	char* identifier; //in compilation unit member "identifiers", do not allocate new memory
+	size_t identifier_index; //in compilation unit member "identifiers"
 	Variable* parameters;
 	size_t parameter_count;
 	size_t parameter_capacity;
@@ -131,14 +134,14 @@ CompilationUnit compilationUnit_create(const char* source_path, LLVMContextRef l
 void compilationUnit_destroy(CompilationUnit* compilation_unit);
 
 //member list modification
-char* compilationUnit_getOrAddIdentifier(CompilationUnit* compilation_unit, const char* identifier);
+size_t compilationUnit_getOrAddIdentifierIndex(CompilationUnit* compilation_unit, const char* identifier);
 StructType* compilationUnit_addStructType(CompilationUnit* compilation_unit);
 Variable* compilationUnit_addGlobalVariable(CompilationUnit* compilation_unit);
 
 Function* compilationUnit_addFunction(CompilationUnit* compilation_unit);
 Variable* compilationUnit_addFunctionParameter(Function* function);
-Scope* compilationUnit_addFunctionScope(Function* function);
+Scope* compilationUnit_addFunctionScope(CompilationUnit* compilation_unit, Function* function);
 Variable* compilationUnit_addScopeVariable(Scope* scope);
 
 //member list lookup
-Variable* compilationUnit_findVariableFromScope(CompilationUnit* compilation_unit, Scope* scope, char* variable_identifier);
+Variable* compilationUnit_findVariableFromScope(CompilationUnit* compilation_unit, Function* parent_function, size_t scope_index, size_t variable_identifier_index);

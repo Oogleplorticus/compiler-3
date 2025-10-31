@@ -13,8 +13,12 @@
 #include "token.h"
 #include "tokeniser.h"
 
+//forward declarations
+static void parseScope(CompilationUnit* compilation_unit, LLVMBuilderRef llvm_builder, Function* current_function, size_t scope_index);
+
 typedef struct {
 	enum {
+		OPERAND_NULL,
 		OPERAND_VARIABLE,
 		OPERAND_CONSTANT,
 		OPERAND_INTERMEDIATE,
@@ -32,6 +36,8 @@ typedef struct {
 
 static VariableType getOperandValueType(ExpressionOperand operand) {
 	switch (operand.operand_type) {
+		case OPERAND_NULL: return (VariableType){.kind=TYPE_NONE};
+
 		case OPERAND_VARIABLE:
 		return operand.operand_value.variable->type;
 
@@ -41,16 +47,20 @@ static VariableType getOperandValueType(ExpressionOperand operand) {
 	}
 }
 
-static LLVMValueRef getOperandValue(LLVMBuilderRef llvm_builder, ExpressionOperand operand) {
+static LLVMValueRef getOperandValue(CompilationUnit* compilation_unit, LLVMBuilderRef llvm_builder, ExpressionOperand operand) {
 	switch (operand.operand_type) {
+		case OPERAND_NULL: return NULL;
+		
 		case OPERAND_CONSTANT:
 		case OPERAND_INTERMEDIATE:
 		return  operand.operand_value.llvm_value.value;
 
 		case OPERAND_VARIABLE:;
-		size_t buffer_size = strlen(operand.operand_value.variable->identifier) * sizeof(char) + sizeof("_ssa");
+		size_t buffer_size = strlen(
+			compilation_unit->identifiers[operand.operand_value.variable->identifier_index]
+		) * sizeof(char) + sizeof("_ssa");
 		char name[buffer_size];
-		strcpy(name, operand.operand_value.variable->identifier);
+		strcpy(name, compilation_unit->identifiers[operand.operand_value.variable->identifier_index]);
 		strcat(name, "_ssa");
 
 		return LLVMBuildLoad2(
@@ -59,13 +69,17 @@ static LLVMValueRef getOperandValue(LLVMBuilderRef llvm_builder, ExpressionOpera
 			operand.operand_value.variable->llvm_stack_pointer,
 			name
 		);
-		break;
 	}
 }
 
 //starts on first token of operand
 //ends on token following operand
-static ExpressionOperand parseExpressionOperand(CompilationUnit* compilation_unit, Scope* current_scope, VariableType expected_type) {
+static ExpressionOperand parseExpressionOperand(
+	CompilationUnit* compilation_unit,
+	Function* current_function,
+	size_t current_scope_index,
+	VariableType expected_type
+) {
 	ExpressionOperand expression_operand;
 	memset(&expression_operand, 0, sizeof(expression_operand));
 
@@ -79,11 +93,12 @@ static ExpressionOperand parseExpressionOperand(CompilationUnit* compilation_uni
 		}
 		//is either variable, or struct member/function call
 		//both of these require knowing the varaiable
-		char* variable_identifier = compilationUnit_getOrAddIdentifier(compilation_unit, currentToken().data.identifier);
+		size_t variable_identifier_index = compilationUnit_getOrAddIdentifierIndex(compilation_unit, currentToken().data.identifier);
 		Variable* variable = compilationUnit_findVariableFromScope(
 			compilation_unit,
-			current_scope,
-			variable_identifier
+			current_function,
+			current_scope_index,
+			variable_identifier_index
 		);
 		if (variable == NULL) {
 			printf("ERROR: Use of undeclared variable!\n");
@@ -217,16 +232,23 @@ static ExpressionOperand parseExpressionOperand(CompilationUnit* compilation_uni
 static inline bool expressionTypesMismatched(ExpressionOperand left_operand, ExpressionOperand right_operand) {
 	return getOperandValueType(left_operand).kind != getOperandValueType(right_operand).kind &&
 		getOperandValueType(left_operand).kind != TYPE_NONE &&
-		getOperandValueType(right_operand).kind != TYPE_NONE;
+		getOperandValueType(right_operand).kind != TYPE_NONE &&
+		!(getOperandValueType(left_operand).kind == TYPE_INT && getOperandValueType(right_operand).kind == TYPE_UNSIGNED) &&
+		!(getOperandValueType(left_operand).kind == TYPE_UNSIGNED && getOperandValueType(right_operand).kind == TYPE_INT);
 }
 
 //somewhat shabby code, not sure how to improve it though
-static LLVMValueRef emitBinaryOperation(LLVMBuilderRef llvm_builder, TokenType operator, ExpressionOperand left_operand, ExpressionOperand right_operand) {
-	//for use as a temporary in assignment operators
-	//do not use for anything else
-	ExpressionOperand assignment_operand;
-	memset(&assignment_operand, 0, sizeof(assignment_operand));
-	assignment_operand.operand_type = OPERAND_INTERMEDIATE;
+static ExpressionOperand emitBinaryOperation(
+	CompilationUnit* compilation_unit,
+	LLVMBuilderRef llvm_builder,
+	TokenType operator,
+	ExpressionOperand left_operand,
+	ExpressionOperand right_operand
+) {
+	//also used as a temporary in assignment operators
+	ExpressionOperand operation_result;
+	memset(&operation_result, 0, sizeof(operation_result));
+	operation_result.operand_type = OPERAND_INTERMEDIATE;
 
 	switch (operator) {
 		case TOKEN_EQUAL:
@@ -239,13 +261,15 @@ static LLVMValueRef emitBinaryOperation(LLVMBuilderRef llvm_builder, TokenType o
 			exit(1);
 		}
 		//get assignment value
-		LLVMValueRef assignment_value = getOperandValue(llvm_builder, right_operand);
+		operation_result.operand_value.llvm_value.value = getOperandValue(compilation_unit, llvm_builder, right_operand);
+		operation_result.operand_value.llvm_value.type = left_operand.operand_value.variable->type;
 		LLVMBuildStore(
 			llvm_builder,
-			assignment_value,
+			operation_result.operand_value.llvm_value.value,
 			left_operand.operand_value.variable->llvm_stack_pointer
 		);
-		return assignment_value;
+
+		return operation_result;
 
 		//arithmetic
 		case TOKEN_PLUS:
@@ -256,19 +280,23 @@ static LLVMValueRef emitBinaryOperation(LLVMBuilderRef llvm_builder, TokenType o
 		switch (getOperandValueType(left_operand).kind) {
 			case TYPE_INT:
 			case TYPE_UNSIGNED:
-			return LLVMBuildAdd(
+			operation_result.operand_value.llvm_value.type = getOperandValueType(left_operand);
+			operation_result.operand_value.llvm_value.value = LLVMBuildAdd(
 				llvm_builder,
-				getOperandValue(llvm_builder, left_operand),
-				getOperandValue(llvm_builder, right_operand),
+				getOperandValue(compilation_unit, llvm_builder, left_operand),
+				getOperandValue(compilation_unit, llvm_builder, right_operand),
 				""
 			);
+			return operation_result;
 			case TYPE_FLOAT:
-			return LLVMBuildFAdd(
+			operation_result.operand_value.llvm_value.type = getOperandValueType(left_operand);
+			operation_result.operand_value.llvm_value.value = LLVMBuildFAdd(
 				llvm_builder,
-				getOperandValue(llvm_builder, left_operand),
-				getOperandValue(llvm_builder, right_operand),
+				getOperandValue(compilation_unit, llvm_builder, left_operand),
+				getOperandValue(compilation_unit, llvm_builder, right_operand),
 				""
 			);
+			return operation_result;
 			default:
 			printf("ERROR: Attempted to emit addition with unsupported type!\n");
 			exit(1);
@@ -283,19 +311,23 @@ static LLVMValueRef emitBinaryOperation(LLVMBuilderRef llvm_builder, TokenType o
 		switch (getOperandValueType(left_operand).kind) {
 			case TYPE_INT:
 			case TYPE_UNSIGNED:
-			return LLVMBuildSub(
+			operation_result.operand_value.llvm_value.type = getOperandValueType(left_operand);
+			operation_result.operand_value.llvm_value.value = LLVMBuildSub(
 				llvm_builder,
-				getOperandValue(llvm_builder, left_operand),
-				getOperandValue(llvm_builder, right_operand),
+				getOperandValue(compilation_unit, llvm_builder, left_operand),
+				getOperandValue(compilation_unit, llvm_builder, right_operand),
 				""
 			);
+			return operation_result;
 			case TYPE_FLOAT:
-			return LLVMBuildFSub(
+			operation_result.operand_value.llvm_value.type = getOperandValueType(left_operand);
+			operation_result.operand_value.llvm_value.value = LLVMBuildFSub(
 				llvm_builder,
-				getOperandValue(llvm_builder, left_operand),
-				getOperandValue(llvm_builder, right_operand),
+				getOperandValue(compilation_unit, llvm_builder, left_operand),
+				getOperandValue(compilation_unit, llvm_builder, right_operand),
 				""
 			);
+			return operation_result;
 			default:
 			printf("ERROR: Attempted to emit subtraction with unsupported type!\n");
 			exit(1);
@@ -310,19 +342,23 @@ static LLVMValueRef emitBinaryOperation(LLVMBuilderRef llvm_builder, TokenType o
 		switch (getOperandValueType(left_operand).kind) {
 			case TYPE_INT:
 			case TYPE_UNSIGNED:
-			return LLVMBuildMul(
+			operation_result.operand_value.llvm_value.type = getOperandValueType(left_operand);
+			operation_result.operand_value.llvm_value.value = LLVMBuildMul(
 				llvm_builder,
-				getOperandValue(llvm_builder, left_operand),
-				getOperandValue(llvm_builder, right_operand),
+				getOperandValue(compilation_unit, llvm_builder, left_operand),
+				getOperandValue(compilation_unit, llvm_builder, right_operand),
 				""
 			);
+			return operation_result;
 			case TYPE_FLOAT:
-			return LLVMBuildFMul(
+			operation_result.operand_value.llvm_value.type = getOperandValueType(left_operand);
+			operation_result.operand_value.llvm_value.value = LLVMBuildFMul(
 				llvm_builder,
-				getOperandValue(llvm_builder, left_operand),
-				getOperandValue(llvm_builder, right_operand),
+				getOperandValue(compilation_unit, llvm_builder, left_operand),
+				getOperandValue(compilation_unit, llvm_builder, right_operand),
 				""
 			);
+			return operation_result;
 			default:
 			printf("ERROR: Attempted to emit multiplication with unsupported type!\n");
 			exit(1);
@@ -336,26 +372,32 @@ static LLVMValueRef emitBinaryOperation(LLVMBuilderRef llvm_builder, TokenType o
 		}
 		switch (getOperandValueType(left_operand).kind) {
 			case TYPE_INT:
-			return LLVMBuildSDiv(
+			operation_result.operand_value.llvm_value.type = getOperandValueType(left_operand);
+			operation_result.operand_value.llvm_value.value = LLVMBuildSDiv(
 				llvm_builder,
-				getOperandValue(llvm_builder, left_operand),
-				getOperandValue(llvm_builder, right_operand),
+				getOperandValue(compilation_unit, llvm_builder, left_operand),
+				getOperandValue(compilation_unit, llvm_builder, right_operand),
 				""
 			);
+			return operation_result;
 			case TYPE_UNSIGNED:
-			return LLVMBuildUDiv(
+			operation_result.operand_value.llvm_value.type = getOperandValueType(left_operand);
+			operation_result.operand_value.llvm_value.value = LLVMBuildUDiv(
 				llvm_builder,
-				getOperandValue(llvm_builder, left_operand),
-				getOperandValue(llvm_builder, right_operand),
+				getOperandValue(compilation_unit, llvm_builder, left_operand),
+				getOperandValue(compilation_unit, llvm_builder, right_operand),
 				""
 			);
+			return operation_result;
 			case TYPE_FLOAT:
-			return LLVMBuildFDiv(
+			operation_result.operand_value.llvm_value.type = getOperandValueType(left_operand);
+			operation_result.operand_value.llvm_value.value = LLVMBuildFDiv(
 				llvm_builder,
-				getOperandValue(llvm_builder, left_operand),
-				getOperandValue(llvm_builder, right_operand),
+				getOperandValue(compilation_unit, llvm_builder, left_operand),
+				getOperandValue(compilation_unit, llvm_builder, right_operand),
 				""
 			);
+			return operation_result;
 			default:
 			printf("ERROR: Attempted to emit division with unsupported type!\n");
 			exit(1);
@@ -369,26 +411,32 @@ static LLVMValueRef emitBinaryOperation(LLVMBuilderRef llvm_builder, TokenType o
 		}
 		switch (getOperandValueType(left_operand).kind) {
 			case TYPE_INT:
-			return LLVMBuildSRem(
+			operation_result.operand_value.llvm_value.type = getOperandValueType(left_operand);
+			operation_result.operand_value.llvm_value.value = LLVMBuildSRem(
 				llvm_builder,
-				getOperandValue(llvm_builder, left_operand),
-				getOperandValue(llvm_builder, right_operand),
+				getOperandValue(compilation_unit, llvm_builder, left_operand),
+				getOperandValue(compilation_unit, llvm_builder, right_operand),
 				""
 			);
+			return operation_result;
 			case TYPE_UNSIGNED:
-			return LLVMBuildURem(
+			operation_result.operand_value.llvm_value.type = getOperandValueType(left_operand);
+			operation_result.operand_value.llvm_value.value = LLVMBuildURem(
 				llvm_builder,
-				getOperandValue(llvm_builder, left_operand),
-				getOperandValue(llvm_builder, right_operand),
+				getOperandValue(compilation_unit, llvm_builder, left_operand),
+				getOperandValue(compilation_unit, llvm_builder, right_operand),
 				""
 			);
+			return operation_result;
 			case TYPE_FLOAT:
-			return LLVMBuildFRem(
+			operation_result.operand_value.llvm_value.type = getOperandValueType(left_operand);
+			operation_result.operand_value.llvm_value.value = LLVMBuildFRem(
 				llvm_builder,
-				getOperandValue(llvm_builder, left_operand),
-				getOperandValue(llvm_builder, right_operand),
+				getOperandValue(compilation_unit, llvm_builder, left_operand),
+				getOperandValue(compilation_unit, llvm_builder, right_operand),
 				""
 			);
+			return operation_result;
 			default:
 			printf("ERROR: Attempted to emit remainder with unsupported type!\n");
 			exit(1);
@@ -404,12 +452,14 @@ static LLVMValueRef emitBinaryOperation(LLVMBuilderRef llvm_builder, TokenType o
 		switch (getOperandValueType(left_operand).kind) {
 			case TYPE_INT:
 			case TYPE_UNSIGNED:
-			return LLVMBuildAnd(
+			operation_result.operand_value.llvm_value.type = getOperandValueType(left_operand);
+			operation_result.operand_value.llvm_value.value = LLVMBuildAnd(
 				llvm_builder,
-				getOperandValue(llvm_builder, left_operand),
-				getOperandValue(llvm_builder, right_operand),
+				getOperandValue(compilation_unit, llvm_builder, left_operand),
+				getOperandValue(compilation_unit, llvm_builder, right_operand),
 				""
 			);
+			return operation_result;
 			default:
 			printf("ERROR: Attempted to emit bitwise and with unsupported type!\n");
 			exit(1);
@@ -424,12 +474,14 @@ static LLVMValueRef emitBinaryOperation(LLVMBuilderRef llvm_builder, TokenType o
 		switch (getOperandValueType(left_operand).kind) {
 			case TYPE_INT:
 			case TYPE_UNSIGNED:
-			return LLVMBuildOr(
+			operation_result.operand_value.llvm_value.type = getOperandValueType(left_operand);
+			operation_result.operand_value.llvm_value.value = LLVMBuildOr(
 				llvm_builder,
-				getOperandValue(llvm_builder, left_operand),
-				getOperandValue(llvm_builder, right_operand),
+				getOperandValue(compilation_unit, llvm_builder, left_operand),
+				getOperandValue(compilation_unit, llvm_builder, right_operand),
 				""
 			);
+			return operation_result;
 			default:
 			printf("ERROR: Attempted to emit bitwise or with unsupported type!\n");
 			exit(1);
@@ -444,12 +496,14 @@ static LLVMValueRef emitBinaryOperation(LLVMBuilderRef llvm_builder, TokenType o
 		switch (getOperandValueType(left_operand).kind) {
 			case TYPE_INT:
 			case TYPE_UNSIGNED:
-			return LLVMBuildXor(
+			operation_result.operand_value.llvm_value.type = getOperandValueType(left_operand);
+			operation_result.operand_value.llvm_value.value = LLVMBuildXor(
 				llvm_builder,
-				getOperandValue(llvm_builder, left_operand),
-				getOperandValue(llvm_builder, right_operand),
+				getOperandValue(compilation_unit, llvm_builder, left_operand),
+				getOperandValue(compilation_unit, llvm_builder, right_operand),
 				""
 			);
+			return operation_result;
 			default:
 			printf("ERROR: Attempted to emit bitwise xor with unsupported type!\n");
 			exit(1);
@@ -464,12 +518,14 @@ static LLVMValueRef emitBinaryOperation(LLVMBuilderRef llvm_builder, TokenType o
 		switch (getOperandValueType(left_operand).kind) {
 			case TYPE_INT:
 			case TYPE_UNSIGNED:
-			return LLVMBuildShl(
+			operation_result.operand_value.llvm_value.type = getOperandValueType(left_operand);
+			operation_result.operand_value.llvm_value.value = LLVMBuildShl(
 				llvm_builder,
-				getOperandValue(llvm_builder, left_operand),
-				getOperandValue(llvm_builder, right_operand),
+				getOperandValue(compilation_unit, llvm_builder, left_operand),
+				getOperandValue(compilation_unit, llvm_builder, right_operand),
 				""
 			);
+			return operation_result;
 			default:
 			printf("ERROR: Attempted to emit left shift with unsupported type!\n");
 			exit(1);
@@ -483,19 +539,23 @@ static LLVMValueRef emitBinaryOperation(LLVMBuilderRef llvm_builder, TokenType o
 		}
 		switch (getOperandValueType(left_operand).kind) {
 			case TYPE_INT:
-			return LLVMBuildAShr(
+			operation_result.operand_value.llvm_value.type = getOperandValueType(left_operand);
+			operation_result.operand_value.llvm_value.value = LLVMBuildAShr(
 				llvm_builder,
-				getOperandValue(llvm_builder, left_operand),
-				getOperandValue(llvm_builder, right_operand),
+				getOperandValue(compilation_unit, llvm_builder, left_operand),
+				getOperandValue(compilation_unit, llvm_builder, right_operand),
 				""
 			);
+			return operation_result;
 			case TYPE_UNSIGNED:
-			return LLVMBuildLShr(
+			operation_result.operand_value.llvm_value.type = getOperandValueType(left_operand);
+			operation_result.operand_value.llvm_value.value = LLVMBuildLShr(
 				llvm_builder,
-				getOperandValue(llvm_builder, left_operand),
-				getOperandValue(llvm_builder, right_operand),
+				getOperandValue(compilation_unit, llvm_builder, left_operand),
+				getOperandValue(compilation_unit, llvm_builder, right_operand),
 				""
 			);
+			return operation_result;
 			default:
 			printf("ERROR: Attempted to emit left shift with unsupported type!\n");
 			exit(1);
@@ -504,75 +564,45 @@ static LLVMValueRef emitBinaryOperation(LLVMBuilderRef llvm_builder, TokenType o
 
 		//arithmetic assignment
 		case TOKEN_PLUS_EQUAL:
-		assignment_operand.operand_value.llvm_value.type = getOperandValueType(left_operand);
-		assignment_operand.operand_value.llvm_value.value = emitBinaryOperation(
-			llvm_builder, TOKEN_PLUS, left_operand, right_operand
-		);
-		return emitBinaryOperation(llvm_builder, TOKEN_EQUAL, left_operand, assignment_operand);
+		operation_result = emitBinaryOperation(compilation_unit, llvm_builder, TOKEN_PLUS, left_operand, right_operand);
+		return emitBinaryOperation(compilation_unit, llvm_builder, TOKEN_EQUAL, left_operand, operation_result);
 
 		case TOKEN_MINUS_EQUAL:
-		assignment_operand.operand_value.llvm_value.type = getOperandValueType(left_operand);
-		assignment_operand.operand_value.llvm_value.value = emitBinaryOperation(
-			llvm_builder, TOKEN_MINUS, left_operand, right_operand
-		);
-		return emitBinaryOperation(llvm_builder, TOKEN_EQUAL, left_operand, assignment_operand);
+		operation_result = emitBinaryOperation(compilation_unit, llvm_builder, TOKEN_MINUS, left_operand, right_operand);
+		return emitBinaryOperation(compilation_unit, llvm_builder, TOKEN_EQUAL, left_operand, operation_result);
 
 		case TOKEN_STAR_EQUAL:
-		assignment_operand.operand_value.llvm_value.type = getOperandValueType(left_operand);
-		assignment_operand.operand_value.llvm_value.value = emitBinaryOperation(
-			llvm_builder, TOKEN_STAR, left_operand, right_operand
-		);
-		return emitBinaryOperation(llvm_builder, TOKEN_EQUAL, left_operand, assignment_operand);
+		operation_result = emitBinaryOperation(compilation_unit, llvm_builder, TOKEN_STAR, left_operand, right_operand);
+		return emitBinaryOperation(compilation_unit, llvm_builder, TOKEN_EQUAL, left_operand, operation_result);
 
 		case TOKEN_FORWARD_SLASH_EQUAL:
-		assignment_operand.operand_value.llvm_value.type = getOperandValueType(left_operand);
-		assignment_operand.operand_value.llvm_value.value = emitBinaryOperation(
-			llvm_builder, TOKEN_FORWARD_SLASH, left_operand, right_operand
-		);
-		return emitBinaryOperation(llvm_builder, TOKEN_EQUAL, left_operand, assignment_operand);
+		operation_result = emitBinaryOperation(compilation_unit, llvm_builder, TOKEN_FORWARD_SLASH, left_operand, right_operand);
+		return emitBinaryOperation(compilation_unit, llvm_builder, TOKEN_EQUAL, left_operand, operation_result);
 
 		case TOKEN_PERCENT_EQUAL:
-		assignment_operand.operand_value.llvm_value.type = getOperandValueType(left_operand);
-		assignment_operand.operand_value.llvm_value.value = emitBinaryOperation(
-			llvm_builder, TOKEN_PERCENT, left_operand, right_operand
-		);
-		return emitBinaryOperation(llvm_builder, TOKEN_EQUAL, left_operand, assignment_operand);
+		operation_result = emitBinaryOperation(compilation_unit, llvm_builder, TOKEN_PERCENT, left_operand, right_operand);
+		return emitBinaryOperation(compilation_unit, llvm_builder, TOKEN_EQUAL, left_operand, operation_result);
 
 		//bitwise assignment
 		case TOKEN_AMPERSAND_EQUAL:
-		assignment_operand.operand_value.llvm_value.type = getOperandValueType(left_operand);
-		assignment_operand.operand_value.llvm_value.value = emitBinaryOperation(
-			llvm_builder, TOKEN_AMPERSAND, left_operand, right_operand
-		);
-		return emitBinaryOperation(llvm_builder, TOKEN_EQUAL, left_operand, assignment_operand);
+		operation_result = emitBinaryOperation(compilation_unit, llvm_builder, TOKEN_AMPERSAND, left_operand, right_operand);
+		return emitBinaryOperation(compilation_unit, llvm_builder, TOKEN_EQUAL, left_operand, operation_result);
 
 		case TOKEN_BAR_EQUAL:
-		assignment_operand.operand_value.llvm_value.type = getOperandValueType(left_operand);
-		assignment_operand.operand_value.llvm_value.value = emitBinaryOperation(
-			llvm_builder, TOKEN_BAR, left_operand, right_operand
-		);
-		return emitBinaryOperation(llvm_builder, TOKEN_EQUAL, left_operand, assignment_operand);
+		operation_result = emitBinaryOperation(compilation_unit, llvm_builder, TOKEN_BAR, left_operand, right_operand);
+		return emitBinaryOperation(compilation_unit, llvm_builder, TOKEN_EQUAL, left_operand, operation_result);
 
 		case TOKEN_CARET_EQUAL:
-		assignment_operand.operand_value.llvm_value.type = getOperandValueType(left_operand);
-		assignment_operand.operand_value.llvm_value.value = emitBinaryOperation(
-			llvm_builder, TOKEN_CARET, left_operand, right_operand
-		);
-		return emitBinaryOperation(llvm_builder, TOKEN_EQUAL, left_operand, assignment_operand);
+		operation_result = emitBinaryOperation(compilation_unit, llvm_builder, TOKEN_CARET, left_operand, right_operand);
+		return emitBinaryOperation(compilation_unit, llvm_builder, TOKEN_EQUAL, left_operand, operation_result);
 
 		case TOKEN_LESS_LESS_EQUAL:
-		assignment_operand.operand_value.llvm_value.type = getOperandValueType(left_operand);
-		assignment_operand.operand_value.llvm_value.value = emitBinaryOperation(
-			llvm_builder, TOKEN_LESS_LESS, left_operand, right_operand
-		);
-		return emitBinaryOperation(llvm_builder, TOKEN_EQUAL, left_operand, assignment_operand);
+		operation_result = emitBinaryOperation(compilation_unit, llvm_builder, TOKEN_LESS_LESS, left_operand, right_operand);
+		return emitBinaryOperation(compilation_unit, llvm_builder, TOKEN_EQUAL, left_operand, operation_result);
 
 		case TOKEN_GREATER_GREATER_EQUAL:
-		assignment_operand.operand_value.llvm_value.type = getOperandValueType(left_operand);
-		assignment_operand.operand_value.llvm_value.value = emitBinaryOperation(
-			llvm_builder, TOKEN_GREATER_GREATER, left_operand, right_operand
-		);
-		return emitBinaryOperation(llvm_builder, TOKEN_EQUAL, left_operand, assignment_operand);
+		operation_result = emitBinaryOperation(compilation_unit, llvm_builder, TOKEN_GREATER_GREATER, left_operand, right_operand);
+		return emitBinaryOperation(compilation_unit, llvm_builder, TOKEN_EQUAL, left_operand, operation_result);
 
 		//comparison
 		case TOKEN_EQUAL_EQUAL:
@@ -585,21 +615,25 @@ static LLVMValueRef emitBinaryOperation(LLVMBuilderRef llvm_builder, TokenType o
 			case TYPE_UNSIGNED:
 			case TYPE_CHAR:
 			case TYPE_BOOL:
-			return LLVMBuildICmp(
+			operation_result.operand_value.llvm_value.type = (VariableType){.kind=TYPE_BOOL, .data.width=1};
+			operation_result.operand_value.llvm_value.value = LLVMBuildICmp(
 				llvm_builder,
 				LLVMIntEQ,
-				getOperandValue(llvm_builder, left_operand),
-				getOperandValue(llvm_builder, right_operand),
+				getOperandValue(compilation_unit, llvm_builder, left_operand),
+				getOperandValue(compilation_unit, llvm_builder, right_operand),
 				""
 			);
+			return operation_result;
 			case TYPE_FLOAT:
-			return LLVMBuildFCmp(
+			operation_result.operand_value.llvm_value.type = (VariableType){.kind=TYPE_BOOL, .data.width=1};
+			operation_result.operand_value.llvm_value.value = LLVMBuildFCmp(
 				llvm_builder,
 				LLVMRealOEQ,
-				getOperandValue(llvm_builder, left_operand),
-				getOperandValue(llvm_builder, right_operand),
+				getOperandValue(compilation_unit, llvm_builder, left_operand),
+				getOperandValue(compilation_unit, llvm_builder, right_operand),
 				""
 			);
+			return operation_result;
 			default:
 			printf("ERROR: Attempted to emit equal comparison with unsupported type!\n");
 			exit(1);
@@ -616,21 +650,25 @@ static LLVMValueRef emitBinaryOperation(LLVMBuilderRef llvm_builder, TokenType o
 			case TYPE_UNSIGNED:
 			case TYPE_CHAR:
 			case TYPE_BOOL:
-			return LLVMBuildICmp(
+			operation_result.operand_value.llvm_value.type = (VariableType){.kind=TYPE_BOOL, .data.width=1};
+			operation_result.operand_value.llvm_value.value = LLVMBuildICmp(
 				llvm_builder,
 				LLVMIntNE,
-				getOperandValue(llvm_builder, left_operand),
-				getOperandValue(llvm_builder, right_operand),
+				getOperandValue(compilation_unit, llvm_builder, left_operand),
+				getOperandValue(compilation_unit, llvm_builder, right_operand),
 				""
 			);
+			return operation_result;
 			case TYPE_FLOAT:
-			return LLVMBuildFCmp(
+			operation_result.operand_value.llvm_value.type = (VariableType){.kind=TYPE_BOOL, .data.width=1};
+			operation_result.operand_value.llvm_value.value = LLVMBuildFCmp(
 				llvm_builder,
 				LLVMRealONE,
-				getOperandValue(llvm_builder, left_operand),
-				getOperandValue(llvm_builder, right_operand),
+				getOperandValue(compilation_unit, llvm_builder, left_operand),
+				getOperandValue(compilation_unit, llvm_builder, right_operand),
 				""
 			);
+			return operation_result;
 			default:
 			printf("ERROR: Attempted to emit not-equal comparison with unsupported type!\n");
 			exit(1);
@@ -644,29 +682,35 @@ static LLVMValueRef emitBinaryOperation(LLVMBuilderRef llvm_builder, TokenType o
 		}
 		switch (getOperandValueType(left_operand).kind) {
 			case TYPE_INT:
-			return LLVMBuildICmp(
+			operation_result.operand_value.llvm_value.type = (VariableType){.kind=TYPE_BOOL, .data.width=1};
+			operation_result.operand_value.llvm_value.value = LLVMBuildICmp(
 				llvm_builder,
 				LLVMIntSLT,
-				getOperandValue(llvm_builder, left_operand),
-				getOperandValue(llvm_builder, right_operand),
+				getOperandValue(compilation_unit, llvm_builder, left_operand),
+				getOperandValue(compilation_unit, llvm_builder, right_operand),
 				""
 			);
+			return operation_result;
 			case TYPE_UNSIGNED:
-			return LLVMBuildICmp(
+			operation_result.operand_value.llvm_value.type = (VariableType){.kind=TYPE_BOOL, .data.width=1};
+			operation_result.operand_value.llvm_value.value = LLVMBuildICmp(
 				llvm_builder,
 				LLVMIntULT,
-				getOperandValue(llvm_builder, left_operand),
-				getOperandValue(llvm_builder, right_operand),
+				getOperandValue(compilation_unit, llvm_builder, left_operand),
+				getOperandValue(compilation_unit, llvm_builder, right_operand),
 				""
 			);
+			return operation_result;
 			case TYPE_FLOAT:
-			return LLVMBuildFCmp(
+			operation_result.operand_value.llvm_value.type = (VariableType){.kind=TYPE_BOOL, .data.width=1};
+			operation_result.operand_value.llvm_value.value = LLVMBuildFCmp(
 				llvm_builder,
 				LLVMRealOLT,
-				getOperandValue(llvm_builder, left_operand),
-				getOperandValue(llvm_builder, right_operand),
+				getOperandValue(compilation_unit, llvm_builder, left_operand),
+				getOperandValue(compilation_unit, llvm_builder, right_operand),
 				""
 			);
+			return operation_result;
 			default:
 			printf("ERROR: Attempted to emit less-than comparison with unsupported type!\n");
 			exit(1);
@@ -680,29 +724,35 @@ static LLVMValueRef emitBinaryOperation(LLVMBuilderRef llvm_builder, TokenType o
 		}
 		switch (getOperandValueType(left_operand).kind) {
 			case TYPE_INT:
-			return LLVMBuildICmp(
+			operation_result.operand_value.llvm_value.type = (VariableType){.kind=TYPE_BOOL, .data.width=1};
+			operation_result.operand_value.llvm_value.value = LLVMBuildICmp(
 				llvm_builder,
 				LLVMIntSGT,
-				getOperandValue(llvm_builder, left_operand),
-				getOperandValue(llvm_builder, right_operand),
+				getOperandValue(compilation_unit, llvm_builder, left_operand),
+				getOperandValue(compilation_unit, llvm_builder, right_operand),
 				""
 			);
+			return operation_result;
 			case TYPE_UNSIGNED:
-			return LLVMBuildICmp(
+			operation_result.operand_value.llvm_value.type = (VariableType){.kind=TYPE_BOOL, .data.width=1};
+			operation_result.operand_value.llvm_value.value = LLVMBuildICmp(
 				llvm_builder,
 				LLVMIntUGT,
-				getOperandValue(llvm_builder, left_operand),
-				getOperandValue(llvm_builder, right_operand),
+				getOperandValue(compilation_unit, llvm_builder, left_operand),
+				getOperandValue(compilation_unit, llvm_builder, right_operand),
 				""
 			);
+			return operation_result;
 			case TYPE_FLOAT:
-			return LLVMBuildFCmp(
+			operation_result.operand_value.llvm_value.type = (VariableType){.kind=TYPE_BOOL, .data.width=1};
+			operation_result.operand_value.llvm_value.value = LLVMBuildFCmp(
 				llvm_builder,
 				LLVMRealOGT,
-				getOperandValue(llvm_builder, left_operand),
-				getOperandValue(llvm_builder, right_operand),
+				getOperandValue(compilation_unit, llvm_builder, left_operand),
+				getOperandValue(compilation_unit, llvm_builder, right_operand),
 				""
 			);
+			return operation_result;
 			default:
 			printf("ERROR: Attempted to emit greater-than comparison with unsupported type!\n");
 			exit(1);
@@ -716,29 +766,35 @@ static LLVMValueRef emitBinaryOperation(LLVMBuilderRef llvm_builder, TokenType o
 		}
 		switch (getOperandValueType(left_operand).kind) {
 			case TYPE_INT:
-			return LLVMBuildICmp(
+			operation_result.operand_value.llvm_value.type = (VariableType){.kind=TYPE_BOOL, .data.width=1};
+			operation_result.operand_value.llvm_value.value = LLVMBuildICmp(
 				llvm_builder,
 				LLVMIntSLE,
-				getOperandValue(llvm_builder, left_operand),
-				getOperandValue(llvm_builder, right_operand),
+				getOperandValue(compilation_unit, llvm_builder, left_operand),
+				getOperandValue(compilation_unit, llvm_builder, right_operand),
 				""
 			);
+			return operation_result;
 			case TYPE_UNSIGNED:
-			return LLVMBuildICmp(
+			operation_result.operand_value.llvm_value.type = (VariableType){.kind=TYPE_BOOL, .data.width=1};
+			operation_result.operand_value.llvm_value.value = LLVMBuildICmp(
 				llvm_builder,
 				LLVMIntULE,
-				getOperandValue(llvm_builder, left_operand),
-				getOperandValue(llvm_builder, right_operand),
+				getOperandValue(compilation_unit, llvm_builder, left_operand),
+				getOperandValue(compilation_unit, llvm_builder, right_operand),
 				""
 			);
+			return operation_result;
 			case TYPE_FLOAT:
-			return LLVMBuildFCmp(
+			operation_result.operand_value.llvm_value.type = (VariableType){.kind=TYPE_BOOL, .data.width=1};
+			operation_result.operand_value.llvm_value.value = LLVMBuildFCmp(
 				llvm_builder,
 				LLVMRealOLE,
-				getOperandValue(llvm_builder, left_operand),
-				getOperandValue(llvm_builder, right_operand),
+				getOperandValue(compilation_unit, llvm_builder, left_operand),
+				getOperandValue(compilation_unit, llvm_builder, right_operand),
 				""
 			);
+			return operation_result;
 			default:
 			printf("ERROR: Attempted to emit less-than-or-equal comparison with unsupported type!\n");
 			exit(1);
@@ -752,29 +808,35 @@ static LLVMValueRef emitBinaryOperation(LLVMBuilderRef llvm_builder, TokenType o
 		}
 		switch (getOperandValueType(left_operand).kind) {
 			case TYPE_INT:
-			return LLVMBuildICmp(
+			operation_result.operand_value.llvm_value.type = (VariableType){.kind=TYPE_BOOL, .data.width=1};
+			operation_result.operand_value.llvm_value.value = LLVMBuildICmp(
 				llvm_builder,
 				LLVMIntSGE,
-				getOperandValue(llvm_builder, left_operand),
-				getOperandValue(llvm_builder, right_operand),
+				getOperandValue(compilation_unit, llvm_builder, left_operand),
+				getOperandValue(compilation_unit, llvm_builder, right_operand),
 				""
 			);
+			return operation_result;
 			case TYPE_UNSIGNED:
-			return LLVMBuildICmp(
+			operation_result.operand_value.llvm_value.type = (VariableType){.kind=TYPE_BOOL, .data.width=1};
+			operation_result.operand_value.llvm_value.value = LLVMBuildICmp(
 				llvm_builder,
 				LLVMIntUGE,
-				getOperandValue(llvm_builder, left_operand),
-				getOperandValue(llvm_builder, right_operand),
+				getOperandValue(compilation_unit, llvm_builder, left_operand),
+				getOperandValue(compilation_unit, llvm_builder, right_operand),
 				""
 			);
+			return operation_result;
 			case TYPE_FLOAT:
-			return LLVMBuildFCmp(
+			operation_result.operand_value.llvm_value.type = (VariableType){.kind=TYPE_BOOL, .data.width=1};
+			operation_result.operand_value.llvm_value.value = LLVMBuildFCmp(
 				llvm_builder,
 				LLVMRealOGE,
-				getOperandValue(llvm_builder, left_operand),
-				getOperandValue(llvm_builder, right_operand),
+				getOperandValue(compilation_unit, llvm_builder, left_operand),
+				getOperandValue(compilation_unit, llvm_builder, right_operand),
 				""
 			);
+			return operation_result;
 			default:
 			printf("ERROR: Attempted to emit greater-than-or-equal comparison with unsupported type!\n");
 			exit(1);
@@ -786,7 +848,8 @@ static LLVMValueRef emitBinaryOperation(LLVMBuilderRef llvm_builder, TokenType o
 		exit(1);
 	}
 
-	return NULL;
+
+	return (ExpressionOperand){.operand_type=OPERAND_NULL};
 }
 
 //starts on first token of expression
@@ -794,12 +857,18 @@ static LLVMValueRef emitBinaryOperation(LLVMBuilderRef llvm_builder, TokenType o
 static ExpressionOperand parseExpression(
 	CompilationUnit* compilation_unit,
 	LLVMBuilderRef llvm_builder,
-	Scope* current_scope,
+	Function* current_function,
+	size_t current_scope_index,
 	TokenType expression_terminator,
 	TokenType previous_operator,
 	VariableType expected_type
 ) {
-	ExpressionOperand left_operand = parseExpressionOperand(compilation_unit, current_scope, expected_type);
+	ExpressionOperand left_operand = parseExpressionOperand(
+		compilation_unit,
+		current_function,
+		current_scope_index,
+		(VariableType){.kind=TYPE_NONE}
+	);
 	
 	while (currentToken().type != expression_terminator) {
 		if (currentToken().type == TOKEN_EOF) {UNEXPECTED_TOKEN(currentToken());}
@@ -816,35 +885,48 @@ static ExpressionOperand parseExpression(
 		ExpressionOperand right_operand = parseExpression(
 			compilation_unit,
 			llvm_builder,
-			current_scope,
+			current_function,
+			current_scope_index,
 			expression_terminator,
 			current_operator,
-			expected_type
+			(VariableType){.kind=TYPE_NONE}
 		);
 
 		//emit bytecode
-		LLVMValueRef llvm_result = emitBinaryOperation(
+		ExpressionOperand result = emitBinaryOperation(
+			compilation_unit,
 			llvm_builder,
 			current_operator,
 			left_operand,
 			right_operand
 		);
 
+		//type checking
+		if (!typesEquivalent(result.operand_value.llvm_value.type, expected_type, false) && expected_type.kind != TYPE_NONE) {
+			printf("ERROR: Mismatched variable type!\n");
+			UNEXPECTED_TOKEN(currentToken());
+		}
+
 		//setup for return/continued parsing
-		left_operand.operand_type = OPERAND_INTERMEDIATE;
-		left_operand.operand_value.llvm_value.value = llvm_result;
+		left_operand = result;
 	}
 
 	return left_operand;
 }
 
-static void parseVariableDeclaration(CompilationUnit* compilation_unit, LLVMBuilderRef llvm_builder, Scope* current_scope) {
+static void parseVariableDeclaration(
+	CompilationUnit* compilation_unit,
+	LLVMBuilderRef llvm_builder,
+	Function* current_function,
+	size_t current_scope_index
+) {
 	ASSERT_CURRENT_TOKEN(TOKEN_IDENTIFIER);
 	ASSERT_NEXT_TOKEN(TOKEN_COLON);
 
 	//create variable in compilation unit
+	Scope* current_scope = current_function->scopes + current_scope_index;
 	Variable* variable = compilationUnit_addScopeVariable(current_scope);
-	variable->identifier = compilationUnit_getOrAddIdentifier(compilation_unit, currentToken().data.identifier);
+	variable->identifier_index = compilationUnit_getOrAddIdentifierIndex(compilation_unit, currentToken().data.identifier);
 
 	//get type
 	//assume type is first
@@ -880,13 +962,17 @@ static void parseVariableDeclaration(CompilationUnit* compilation_unit, LLVMBuil
 
 	//emit stack allocation
 	LLVMBuilderRef alloca_builder = LLVMCreateBuilderInContext(compilation_unit->llvm_context);
-	LLVMValueRef first_instruction = LLVMGetFirstInstruction(current_scope->parent_function->llvm_entry_block);
+	LLVMValueRef first_instruction = LLVMGetFirstInstruction(current_function->llvm_entry_block);
 	if (first_instruction != NULL) {
-		LLVMPositionBuilderBefore(alloca_builder, LLVMGetFirstInstruction(current_scope->parent_function->llvm_entry_block));
+		LLVMPositionBuilderBefore(alloca_builder, LLVMGetFirstInstruction(current_function->llvm_entry_block));
 	} else {
-		LLVMPositionBuilderAtEnd(alloca_builder, current_scope->parent_function->llvm_entry_block);
+		LLVMPositionBuilderAtEnd(alloca_builder, current_function->llvm_entry_block);
 	}
-	variable->llvm_stack_pointer = LLVMBuildAlloca(alloca_builder, variable->llvm_type, variable->identifier);
+	variable->llvm_stack_pointer = LLVMBuildAlloca(
+		alloca_builder,
+		variable->llvm_type,
+		compilation_unit->identifiers[variable->identifier_index]
+	);
 
 	//TODO handle tags
 
@@ -897,12 +983,14 @@ static void parseVariableDeclaration(CompilationUnit* compilation_unit, LLVMBuil
 		ExpressionOperand assignment_value = parseExpression(
 			compilation_unit,
 			llvm_builder,
-			current_scope,
+			current_function,
+			current_scope_index,
 			TOKEN_SEMICOLON,
 			TOKEN_EQUAL,
 			variable->type
 		);
 		emitBinaryOperation(
+			compilation_unit,
 			llvm_builder,
 			TOKEN_EQUAL,
 			(ExpressionOperand){.operand_type=OPERAND_VARIABLE, .operand_value.variable=variable},
@@ -914,16 +1002,79 @@ static void parseVariableDeclaration(CompilationUnit* compilation_unit, LLVMBuil
 	ASSERT_CURRENT_TOKEN(TOKEN_SEMICOLON);
 }
 
+//starts on while statement
+//ends on end of while block
+static void parseWhileStatement(
+	CompilationUnit* compilation_unit,
+	LLVMBuilderRef llvm_builder,
+	Function* current_function,
+	size_t current_scope_index
+) {
+	ASSERT_CURRENT_TOKEN(TOKEN_WHILE);
+	incrementToken();
+
+	//setup condition block
+	LLVMBasicBlockRef condition_block = LLVMAppendBasicBlock(
+		current_function->llvm_function,
+		"while_loop_condition"
+	);
+	LLVMBuildBr(llvm_builder, condition_block);
+	LLVMPositionBuilderAtEnd(llvm_builder, condition_block);
+
+	//parse condition
+	ExpressionOperand condition_result = parseExpression(
+		compilation_unit,
+		llvm_builder,
+		current_function,
+		current_scope_index,
+		TOKEN_BRACE_LEFT,
+		TOKEN_NONE,
+		(VariableType){.kind=TYPE_BOOL, .data.width=1}
+	);
+	incrementToken();
+
+	//setup first block of body
+	LLVMBasicBlockRef body_start_block = LLVMAppendBasicBlock(
+		current_function->llvm_function,
+		"while_loop_body_start"
+	);
+	LLVMPositionBuilderAtEnd(llvm_builder, body_start_block);
+
+	//create and parse new scope
+	Scope* body_scope = compilationUnit_addFunctionScope(compilation_unit, current_function);
+	body_scope->parent_scope_index = current_scope_index;
+	size_t body_scope_index = body_scope - current_function->scopes;
+
+	parseScope(compilation_unit, llvm_builder, current_function, body_scope_index);
+
+	//create exit block
+	LLVMBasicBlockRef exit_block = LLVMAppendBasicBlock(
+		current_function->llvm_function,
+		"while_loop_exit"
+	);
+
+	//finalise branches and position builder in exit block
+	LLVMBuildBr(llvm_builder, condition_block);
+	LLVMPositionBuilderAtEnd(llvm_builder, condition_block);
+	LLVMBuildCondBr(
+		llvm_builder,
+		condition_result.operand_value.llvm_value.value,
+		body_start_block,
+		exit_block
+	);
+	LLVMPositionBuilderAtEnd(llvm_builder, exit_block);
+}
+
 //starts on fn keyword
 static void parseFunctionBody(CompilationUnit* compilation_unit) {
 	ASSERT_CURRENT_TOKEN(TOKEN_FN);
 	ASSERT_NEXT_TOKEN(TOKEN_IDENTIFIER);
 
 	//get function
-	char* function_identifier = compilationUnit_getOrAddIdentifier(compilation_unit, nextToken().data.identifier);
+	size_t function_identifier_index = compilationUnit_getOrAddIdentifierIndex(compilation_unit, nextToken().data.identifier);
 	Function* function = NULL;
 	for (size_t i = 0; i < compilation_unit->function_count; ++i) {
-		if (function_identifier == compilation_unit->functions[i].identifier) {
+		if (function_identifier_index == compilation_unit->functions[i].identifier_index) {
 			function = compilation_unit->functions + i;
 		}
 	}
@@ -948,14 +1099,15 @@ static void parseFunctionBody(CompilationUnit* compilation_unit) {
 		function->parameters[i].llvm_stack_pointer = LLVMBuildAlloca(
 			llvm_builder,
 			llvmTypeFromVariableType(compilation_unit->llvm_context, function->parameters[i].type),
-			function->parameters[i].identifier
+			compilation_unit->identifiers[function->parameters[i].identifier_index]
 		);
 		LLVMValueRef parameter_llvm_temporary = LLVMGetParam(function->llvm_function, i);
 		LLVMBuildStore(llvm_builder, parameter_llvm_temporary, function->parameters[i].llvm_stack_pointer);
 	}
 
 	//create entry scope
-	Scope* entry_scope = compilationUnit_addFunctionScope(function);
+	Scope* entry_scope = compilationUnit_addFunctionScope(compilation_unit, function);
+	size_t entry_scope_index = entry_scope - function->scopes;
 
 	//skip declaration
 	while (currentToken().type != TOKEN_BRACE_LEFT) {
@@ -964,44 +1116,76 @@ static void parseFunctionBody(CompilationUnit* compilation_unit) {
 	incrementToken();
 
 	//parse function body
-	size_t scope_depth = 0;
+	parseScope(compilation_unit, llvm_builder, function, entry_scope_index);
+	incrementToken();
 	
-	Scope* current_scope = entry_scope;
-	while (currentToken().type != TOKEN_EOF) {
-		switch (currentToken().type) {
-			case TOKEN_IDENTIFIER:
-			if (nextToken().type == TOKEN_COLON) {
-				parseVariableDeclaration(compilation_unit, llvm_builder, current_scope);
-				incrementToken();
-			} else {
-				parseExpression(
-					compilation_unit,
-					llvm_builder,
-					current_scope,
-					TOKEN_SEMICOLON,
-					TOKEN_NONE,
-					(VariableType){.kind=TYPE_NONE, .data={NULL}}
-				);
-				incrementToken();
-			}
-			break;
-			
-			case TOKEN_BRACE_RIGHT:
-			incrementToken();
-			//go up a scope
-			//if at scope depth 0 (end of function), return
-			if (scope_depth <= 0) return;
-			--scope_depth;
-			break;
-
-			default: UNEXPECTED_TOKEN(currentToken());
-		}
-	}
-
 	LLVMDisposeBuilder(llvm_builder);
 }
 
-static void parseBlock(CompilationUnit* compilation_unit) {
+//return value is true if end of scope
+static bool parseStatement(
+	CompilationUnit* compilation_unit,
+	LLVMBuilderRef llvm_builder, 
+	Function* current_function,
+	size_t scope_index
+) {
+	switch (currentToken().type) {
+		case TOKEN_IDENTIFIER:
+		if (nextToken().type == TOKEN_COLON) {
+			parseVariableDeclaration(compilation_unit, llvm_builder, current_function, scope_index);
+			incrementToken();
+		} else {
+			parseExpression(
+				compilation_unit,
+				llvm_builder,
+				current_function,
+				scope_index,
+				TOKEN_SEMICOLON,
+				TOKEN_NONE,
+				(VariableType){.kind=TYPE_NONE, .data={NULL}}
+			);
+			incrementToken();
+		}
+		break;
+
+		case TOKEN_WHILE:
+		parseWhileStatement(compilation_unit, llvm_builder, current_function, scope_index);
+		incrementToken();
+		break;
+
+		case TOKEN_BRACE_LEFT:;
+		//go down a scope
+		Scope* new_scope = compilationUnit_addFunctionScope(compilation_unit, current_function);
+		new_scope->parent_scope_index = scope_index;
+		size_t new_scope_index = new_scope - current_function->scopes;
+		parseScope(compilation_unit, llvm_builder, current_function, new_scope_index);
+		incrementToken();
+		break;
+		
+		case TOKEN_BRACE_RIGHT:
+		//signal to go up a scope
+		return true;
+
+		default: UNEXPECTED_TOKEN(currentToken());
+	}
+
+	return false;
+}
+
+//starts on token after opening brace
+//ends at end of scope
+static void parseScope(
+	CompilationUnit* compilation_unit,
+	LLVMBuilderRef llvm_builder,
+	Function* current_function,
+	size_t scope_index
+) {
+	while (currentToken().type != TOKEN_EOF) {
+		if (parseStatement(compilation_unit, llvm_builder, current_function, scope_index)) return;
+	}
+}
+
+static void parseFunctions(CompilationUnit* compilation_unit) {
 	switch (currentToken().type) {
 		case TOKEN_FN:
 		parseFunctionBody(compilation_unit);
@@ -1019,6 +1203,6 @@ void parseBlocks(CompilationUnit* compilation_unit) {
 	tokeniserSetSource(compilation_unit->source_file);
 
 	while (currentToken().type != TOKEN_EOF) {
-		parseBlock(compilation_unit);
+		parseFunctions(compilation_unit);
 	}
 }

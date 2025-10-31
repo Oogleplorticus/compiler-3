@@ -99,20 +99,23 @@ VariableType variableTypeFromToken(Token token) {
 }
 
 LLVMTypeRef llvmTypeFromVariableType(LLVMContextRef llvm_context, VariableType variable_type) {
+	size_t type_width = variable_type.data.width == 0 ? TARGET_WORD_SIZE : variable_type.data.width;
+
 	switch (variable_type.kind) {
 		case TYPE_INT:
 		case TYPE_UNSIGNED:
-		return LLVMIntTypeInContext(llvm_context, variable_type.data.width);
+
+		return LLVMIntTypeInContext(llvm_context, type_width);
 
 		case TYPE_FLOAT:
-		switch (variable_type.data.width) {
+		switch (type_width) {
 			case 16: return LLVMHalfTypeInContext(llvm_context);
 			case 32: return LLVMFloatTypeInContext(llvm_context);
 			case 64: return LLVMDoubleTypeInContext(llvm_context);
 			case 128: return LLVMPPCFP128TypeInContext(llvm_context);
 
 			default:
-			printf("ERROR: Invalid floating point bit width of %zu! Valid widths are 16, 32, 64 or 128.\n", variable_type.data.width);
+			printf("ERROR: Invalid floating point bit width of %zu! Valid widths are 16, 32, 64 or 128.\n", type_width);
 			exit(1);
 		}
 
@@ -193,4 +196,16 @@ size_t operatorPrecedence(TokenType operator_type) {
 		printf("ERROR: Tried to get precedence of unsupported operator %d!\n", operator_type);
 		exit(1);
 	}
+}
+
+bool typesEquivalent(VariableType t0, VariableType t1, bool check_width) {
+	if (t0.kind != t1.kind) return false;
+
+	if (t0.kind == TYPE_STRUCT) {
+		if (t0.data.struct_type != t1.data.struct_type) return false;
+	} else {
+		if (t0.data.width != t1.data.width && check_width) return false;
+	}
+
+	return true;
 }

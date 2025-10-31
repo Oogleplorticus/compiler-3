@@ -3,6 +3,9 @@
 #include "compilation_unit.h"
 #include "token.h"
 
+//assume compiler of compiler is the one using the compiler
+#define TARGET_WORD_SIZE (sizeof(size_t) * 8)
+
 #define UNEXPECTED_TOKEN(TOKEN)                                                                         \
 printf("ERROR: Unexpected token ");                                                                     \
 printToken(TOKEN);                                                                                      \
@@ -24,3 +27,5 @@ LLVMTypeRef llvmTypeFromVariableType(LLVMContextRef llvm_context, VariableType v
 LLVMTypeRef llvmFunctionTypeFromFunction(LLVMContextRef llvm_context, Function* function);
 
 size_t operatorPrecedence(TokenType operator_type);
+
+bool typesEquivalent(VariableType t0, VariableType t1, bool check_width);

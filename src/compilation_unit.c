@@ -107,12 +107,12 @@ member list modification
 
 */
 
-char* compilationUnit_getOrAddIdentifier(CompilationUnit* compilation_unit, const char* identifier) {
+size_t compilationUnit_getOrAddIdentifierIndex(CompilationUnit* compilation_unit, const char* identifier) {
 	//check if already in identifiers list
 	for (size_t i = 0; i < compilation_unit->identifier_count; ++i) {
 		//if strings are the same, return string pointer in identifiers list
 		int comparison_result = strcmp(identifier, compilation_unit->identifiers[i]);
-		if (comparison_result == 0) return compilation_unit->identifiers[i];
+		if (comparison_result == 0) return i;
 	}
 
 	//not found in identifiers list
@@ -140,7 +140,7 @@ char* compilationUnit_getOrAddIdentifier(CompilationUnit* compilation_unit, cons
 	strcpy(*new_identifier, identifier);
 
 	++compilation_unit->identifier_count;
-	return *new_identifier;
+	return compilation_unit->identifier_count - 1;
 }
 
 StructType* compilationUnit_addStructType(CompilationUnit* compilation_unit) {
@@ -162,6 +162,9 @@ StructType* compilationUnit_addStructType(CompilationUnit* compilation_unit) {
 	StructType* new_struct = compilation_unit->structs + compilation_unit->struct_count;
 	memset(new_struct, 0, sizeof(*new_struct));
 	++compilation_unit->struct_count;
+
+	//initialise members
+	new_struct->identifier_index = NULL_INDEX;
 
 	return new_struct;
 }
@@ -185,6 +188,9 @@ Variable* compilationUnit_addVariable(CompilationUnit* compilation_unit) {
 	Variable* new_variable = compilation_unit->global_variables + compilation_unit->global_variable_count;
 	memset(new_variable, 0, sizeof(*new_variable));
 	++compilation_unit->global_variable_count;
+
+	//initialise members
+	new_variable->identifier_index = NULL_INDEX;
 
 	return new_variable;
 }
@@ -227,6 +233,9 @@ Function* compilationUnit_addFunction(CompilationUnit* compilation_unit) {
 	}
 	memset(new_function->parameters, 0, parameters_size);
 
+	//initialise members
+	new_function->identifier_index = NULL_INDEX;
+
 	return new_function;
 }
 
@@ -250,10 +259,13 @@ Variable* compilationUnit_addFunctionParameter(Function* function) {
 	memset(new_parameter, 0, sizeof(*new_parameter));
 	++function->parameter_count;
 
+	//initialise members
+	new_parameter->identifier_index = NULL_INDEX;
+
 	return new_parameter;
 }
 
-Scope* compilationUnit_addFunctionScope(Function* function) {
+Scope* compilationUnit_addFunctionScope(CompilationUnit* compilation_unit, Function* function) {
 	//if at capacity then double capacity
 	if (function->scope_count >= function->scope_capacity) {
 		//attempt to double size
@@ -282,8 +294,9 @@ Scope* compilationUnit_addFunctionScope(Function* function) {
 	}
 	memset(new_scope->variables, 0, variables_size);
 
-	//initialise required members
-	new_scope->parent_function = function;
+	//initialise members
+	new_scope->parent_scope_index = NULL_INDEX;
+	new_scope->parent_function_index = function - compilation_unit->functions;
 
 	return new_scope;
 }
@@ -308,6 +321,9 @@ Variable* compilationUnit_addScopeVariable(Scope* scope) {
 	memset(new_variable, 0, sizeof(*new_variable));
 	++scope->variable_count;
 
+	//initialise members
+	new_variable->identifier_index = NULL_INDEX;
+
 	return new_variable;
 }
 
@@ -317,28 +333,30 @@ member list lookup
 
 */
 
-Variable* compilationUnit_findVariableFromScope(CompilationUnit* compilation_unit, Scope* scope, char* variable_identifier) {
-	//check pointer valid
-	if (scope == NULL) return NULL;
+Variable* compilationUnit_findVariableFromScope(CompilationUnit* compilation_unit, Function* parent_function, size_t scope_index, size_t variable_identifier_index) {
+	if (scope_index == NULL_INDEX) return NULL;
+
+	//get helpful pointer
+	Scope* scope = parent_function->scopes + scope_index;
 
 	//check for variable in this scope
 	for (size_t i = 0; i < scope->variable_count; ++i) {
-		if (variable_identifier == scope->variables[i].identifier) {
+		if (variable_identifier_index == scope->variables[i].identifier_index) {
 			return scope->variables + i;
 		}
 	}
 
 	//if no parent scope check function parameters and globals
-	if (scope->parent_scope == NULL) {
+	if (scope->parent_scope_index == NULL_INDEX) {
 		//parameters
-		for (size_t i = 0; i < scope->parent_function->parameter_count; ++i) {
-			if (variable_identifier == scope->parent_function->parameters[i].identifier) {
-				return scope->parent_function->parameters + i;
+		for (size_t i = 0; i < parent_function->parameter_count; ++i) {
+			if (variable_identifier_index == parent_function->parameters[i].identifier_index) {
+				return parent_function->parameters + i;
 			}
 		}
 		//globals
 		for (size_t i = 0; i < compilation_unit->global_variable_count; ++i) {
-			if (variable_identifier == compilation_unit->global_variables[i].identifier) {
+			if (variable_identifier_index == compilation_unit->global_variables[i].identifier_index) {
 				return compilation_unit->global_variables + i;
 			}
 		}
@@ -348,5 +366,5 @@ Variable* compilationUnit_findVariableFromScope(CompilationUnit* compilation_uni
 	}
 
 	//check for variable in parent scope
-	return compilationUnit_findVariableFromScope(compilation_unit, scope->parent_scope, variable_identifier);
+	return compilationUnit_findVariableFromScope(compilation_unit, parent_function, scope->parent_scope_index, variable_identifier_index);
 }

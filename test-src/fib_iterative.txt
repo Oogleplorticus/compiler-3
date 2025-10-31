@@ -10,6 +10,4 @@ fn main() {
 		fib1 = fibTemp;
 		n -= 1;
 	}
-
-	return;
 }
