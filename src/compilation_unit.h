@@ -78,7 +78,7 @@ struct Function {
 	Variable* parameters;
 	size_t parameter_count;
 	size_t parameter_capacity;
-	VariableType returnType;
+	VariableType return_type;
 
 	Scope* scopes;
 	size_t scope_count;

@@ -1118,6 +1118,22 @@ static void parseFunctionBody(CompilationUnit* compilation_unit) {
 	//parse function body
 	parseScope(compilation_unit, llvm_builder, function, entry_scope_index);
 	incrementToken();
+
+	//implicit return for void functions and main
+	char* function_identifier = compilation_unit->identifiers[function_identifier_index];
+	bool llvm_block_terminated = LLVMGetBasicBlockTerminator(LLVMGetInsertBlock(llvm_builder)) != NULL;
+
+	if (!llvm_block_terminated) {
+		if (strcmp(function_identifier, MAIN_FUNCTION_IDENTIFIER) == 0) {
+			LLVMValueRef llvm_0_int = LLVMConstInt(LLVMInt32TypeInContext(compilation_unit->llvm_context), 0, false);
+			LLVMBuildRet(llvm_builder, llvm_0_int);
+		} else if (function->return_type.kind == TYPE_VOID) {
+			LLVMBuildRetVoid(llvm_builder);
+		} else {
+			printf("ERROR: Non-void function \"%s\" does not return a value!\n", function_identifier);
+			exit(1);
+		}
+	}
 	
 	LLVMDisposeBuilder(llvm_builder);
 }

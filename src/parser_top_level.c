@@ -62,23 +62,23 @@ static void parseFunctionDeclaration(CompilationUnit* compilation_unit) {
 	//get return type
 	if (currentToken().type == TOKEN_BRACE_LEFT) {
 		//no return type
-		function->returnType.kind = TYPE_VOID;
-		function->returnType.data.width = 0;
+		function->return_type.kind = TYPE_VOID;
+		function->return_type.data.width = 0;
 
 	} else if (currentToken().type == TOKEN_MINUS_GREATER) {
 		//explicit return type
 		//TODO special handling for user defined types
 		incrementToken();
 		switch (currentToken().type) {
-			case TOKEN_INTEGER_TYPE:   function->returnType.kind = TYPE_INT; break;
-			case TOKEN_UNSIGNED_TYPE:  function->returnType.kind = TYPE_UNSIGNED; break;
-			case TOKEN_FLOAT_TYPE:     function->returnType.kind = TYPE_FLOAT; break;
-			case TOKEN_BOOL_TYPE:      function->returnType.kind = TYPE_BOOL; break;
-			case TOKEN_CHARACTER_TYPE: function->returnType.kind = TYPE_CHAR; break;
+			case TOKEN_INTEGER_TYPE:   function->return_type.kind = TYPE_INT; break;
+			case TOKEN_UNSIGNED_TYPE:  function->return_type.kind = TYPE_UNSIGNED; break;
+			case TOKEN_FLOAT_TYPE:     function->return_type.kind = TYPE_FLOAT; break;
+			case TOKEN_BOOL_TYPE:      function->return_type.kind = TYPE_BOOL; break;
+			case TOKEN_CHARACTER_TYPE: function->return_type.kind = TYPE_CHAR; break;
 
 			default: UNEXPECTED_TOKEN(currentToken());
 		}
-		function->returnType.data.width = currentToken().data.type_width;
+		function->return_type.data.width = currentToken().data.type_width;
 		incrementToken();
 
 	} else {

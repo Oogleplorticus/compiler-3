@@ -5,6 +5,7 @@
 
 //assume compiler of compiler is the one using the compiler
 #define TARGET_WORD_SIZE (sizeof(size_t) * 8)
+#define MAIN_FUNCTION_IDENTIFIER "main"
 
 #define UNEXPECTED_TOKEN(TOKEN)                                                                         \
 printf("ERROR: Unexpected token ");                                                                     \

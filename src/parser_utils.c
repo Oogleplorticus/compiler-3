@@ -149,10 +149,10 @@ LLVMTypeRef llvmFunctionTypeFromFunction(CompilationUnit* compilation_unit, Func
 	//this wont be permanent and shouldnt affect much
 	char* function_identifier = compilation_unit->identifiers[function->identifier_index];
 	LLVMTypeRef return_type = NULL;
-	if (strcmp(function_identifier, "main") == 0) {
+	if (strcmp(function_identifier, MAIN_FUNCTION_IDENTIFIER) == 0) {
 		return_type = LLVMInt32TypeInContext(compilation_unit->llvm_context);
 	} else {
-		return_type = llvmTypeFromVariableType(compilation_unit->llvm_context, function->returnType);
+		return_type = llvmTypeFromVariableType(compilation_unit->llvm_context, function->return_type);
 	}
 
 	return LLVMFunctionType(
