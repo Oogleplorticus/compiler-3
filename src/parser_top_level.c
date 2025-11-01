@@ -91,7 +91,7 @@ static void parseFunctionDeclaration(CompilationUnit* compilation_unit) {
 	incrementToken();
 
 	//create llvm function
-	function->llvm_function_type = llvmFunctionTypeFromFunction(compilation_unit->llvm_context, function);
+	function->llvm_function_type = llvmFunctionTypeFromFunction(compilation_unit, function);
 	function->llvm_function = LLVMAddFunction(
 		compilation_unit->llvm_module,
 		compilation_unit->identifiers[function->identifier_index],

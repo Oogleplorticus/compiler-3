@@ -6,6 +6,7 @@
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "compilation_unit.h"
 #include "token.h"
@@ -138,14 +139,24 @@ LLVMTypeRef llvmTypeFromVariableType(LLVMContextRef llvm_context, VariableType v
 	}
 }
 
-LLVMTypeRef llvmFunctionTypeFromFunction(LLVMContextRef llvm_context, Function* function) {
+LLVMTypeRef llvmFunctionTypeFromFunction(CompilationUnit* compilation_unit, Function* function) {
 	LLVMTypeRef parameters[function->parameter_count];
 	for (size_t i = 0; i < function->parameter_count; ++i) {
-		parameters[i] = llvmTypeFromVariableType(llvm_context, function->parameters[i].type);
+		parameters[i] = llvmTypeFromVariableType(compilation_unit->llvm_context, function->parameters[i].type);
+	}
+
+	//if function is main, hardcode return type to work with libc
+	//this wont be permanent and shouldnt affect much
+	char* function_identifier = compilation_unit->identifiers[function->identifier_index];
+	LLVMTypeRef return_type = NULL;
+	if (strcmp(function_identifier, "main") == 0) {
+		return_type = LLVMInt32TypeInContext(compilation_unit->llvm_context);
+	} else {
+		return_type = llvmTypeFromVariableType(compilation_unit->llvm_context, function->returnType);
 	}
 
 	return LLVMFunctionType(
-		llvmTypeFromVariableType(llvm_context, function->returnType),
+		return_type,
 		parameters,
 		function->parameter_count,
 		false

@@ -24,7 +24,7 @@ void skipStruct(void);
 VariableType variableTypeFromToken(Token token);
 
 LLVMTypeRef llvmTypeFromVariableType(LLVMContextRef llvm_context, VariableType variable_type);
-LLVMTypeRef llvmFunctionTypeFromFunction(LLVMContextRef llvm_context, Function* function);
+LLVMTypeRef llvmFunctionTypeFromFunction(CompilationUnit* compilation_unit, Function* function);
 
 size_t operatorPrecedence(TokenType operator_type);
 

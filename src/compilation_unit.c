@@ -99,6 +99,8 @@ void compilationUnit_destroy(CompilationUnit* compilation_unit) {
 	LLVMDisposeModule(compilation_unit->llvm_module);
 	compilation_unit->llvm_module = NULL;
 	compilation_unit->llvm_context = NULL;
+
+	//TODO free everything else
 }
 
 /*
