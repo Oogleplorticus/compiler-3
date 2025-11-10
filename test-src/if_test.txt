@@ -1,0 +1,16 @@
+fn main() {
+	bigvar : i32 = 1;
+	smallvar : i32;
+
+	if bigvar < 5 {
+		smallvar = 2;
+	} else if bigvar > 5 {
+		smallvar = 3;
+	} else {
+		smallvar = 5 + 7;
+	}
+
+	if smallvar < 7 {
+		bigvar = 2;
+	}
+}

@@ -13,6 +13,8 @@
 #include "token.h"
 #include "tokeniser.h"
 
+#define LLVM_SSA_VARIABLE_SUFFIX "_"
+
 //forward declarations
 static void parseScope(CompilationUnit* compilation_unit, LLVMBuilderRef llvm_builder, Function* current_function, size_t scope_index);
 
@@ -58,10 +60,10 @@ static LLVMValueRef getOperandValue(CompilationUnit* compilation_unit, LLVMBuild
 		case OPERAND_VARIABLE:;
 		size_t buffer_size = strlen(
 			compilation_unit->identifiers[operand.operand_value.variable->identifier_index]
-		) * sizeof(char) + sizeof("_ssa");
+		) * sizeof(char) + sizeof(LLVM_SSA_VARIABLE_SUFFIX);
 		char name[buffer_size];
 		strcpy(name, compilation_unit->identifiers[operand.operand_value.variable->identifier_index]);
-		strcat(name, "_ssa");
+		strcat(name, LLVM_SSA_VARIABLE_SUFFIX);
 
 		return LLVMBuildLoad2(
 			llvm_builder,
@@ -1002,7 +1004,7 @@ static void parseVariableDeclaration(
 	ASSERT_CURRENT_TOKEN(TOKEN_SEMICOLON);
 }
 
-//starts on while statement
+//starts on while token
 //ends on end of while block
 static void parseWhileStatement(
 	CompilationUnit* compilation_unit,
@@ -1063,6 +1065,128 @@ static void parseWhileStatement(
 		exit_block
 	);
 	LLVMPositionBuilderAtEnd(llvm_builder, exit_block);
+}
+
+//starts on if token
+//ends on end of if else chain
+//pass NULL to llvm_exit_block if calling from another function
+//returns a reference to its condition block, shouldnt need to be used in other functions
+static LLVMBasicBlockRef parseIfStatement(
+	CompilationUnit* compilation_unit,
+	LLVMBuilderRef llvm_builder,
+	Function* current_function,
+	size_t current_scope_index,
+	LLVMBasicBlockRef exit_block
+) {
+	ASSERT_CURRENT_TOKEN(TOKEN_IF);
+	incrementToken();
+
+	//setup exit block if needed
+	//unfortunately it needs to come first which doesnt look nice
+	bool first_if_in_chain = false;
+	if (exit_block == NULL) {
+		exit_block = LLVMAppendBasicBlock(
+			current_function->llvm_function,
+			"if_exit"
+		);
+		first_if_in_chain = true;
+	}
+
+	//setup condition block
+	LLVMBasicBlockRef condition_block = LLVMAppendBasicBlock(
+		current_function->llvm_function,
+		"if_condition"
+	);
+	if (first_if_in_chain) LLVMBuildBr(llvm_builder, condition_block);
+	LLVMPositionBuilderAtEnd(llvm_builder, condition_block);
+
+	//parse condition
+	ExpressionOperand condition_result = parseExpression(
+		compilation_unit,
+		llvm_builder,
+		current_function,
+		current_scope_index,
+		TOKEN_BRACE_LEFT,
+		TOKEN_NONE,
+		(VariableType){.kind=TYPE_BOOL, .data.width=1}
+	);
+	incrementToken();
+
+	//setup first block of body
+	LLVMBasicBlockRef body_start_block = LLVMAppendBasicBlock(
+		current_function->llvm_function,
+		"if_body_start"
+	);
+	LLVMPositionBuilderAtEnd(llvm_builder, body_start_block);
+
+	//create and parse new scope
+	Scope* body_scope = compilationUnit_addFunctionScope(compilation_unit, current_function);
+	body_scope->parent_scope_index = current_scope_index;
+	size_t body_scope_index = body_scope - current_function->scopes;
+
+	parseScope(compilation_unit, llvm_builder, current_function, body_scope_index);
+
+	//create branch to exit block
+	LLVMBuildBr(llvm_builder, exit_block);
+
+	//handle else and else ifs
+	LLVMBasicBlockRef else_destination_block = NULL;
+	if (nextToken().type == TOKEN_ELSE) {
+		incrementToken();
+		incrementToken();
+		
+		//check for else if
+		switch (currentToken().type) {
+			case TOKEN_IF:
+			else_destination_block = parseIfStatement(
+				compilation_unit,
+				llvm_builder,
+				current_function,
+				current_scope_index,
+				exit_block
+			);
+			break;
+
+			case TOKEN_BRACE_LEFT:
+			incrementToken();
+			
+			//setup first block of else body
+			LLVMBasicBlockRef else_body_start_block = LLVMAppendBasicBlock(
+				current_function->llvm_function,
+				"else_body_start"
+			);
+			LLVMPositionBuilderAtEnd(llvm_builder, else_body_start_block);
+
+			//create and parse new scope
+			Scope* else_body_scope = compilationUnit_addFunctionScope(compilation_unit, current_function);
+			else_body_scope->parent_scope_index = current_scope_index;
+			size_t else_body_scope_index = else_body_scope - current_function->scopes;
+
+			parseScope(compilation_unit, llvm_builder, current_function, else_body_scope_index);
+
+			//create branch to exit block
+			LLVMBuildBr(llvm_builder, exit_block);
+
+			else_destination_block = else_body_start_block;
+			break;
+			
+			default: UNEXPECTED_TOKEN(currentToken());
+		}
+	} else {
+		else_destination_block = exit_block;
+	}
+
+	//finalise branches and position builder in exit block
+	LLVMPositionBuilderAtEnd(llvm_builder, condition_block);
+	LLVMBuildCondBr(
+		llvm_builder,
+		condition_result.operand_value.llvm_value.value,
+		body_start_block,
+		else_destination_block
+	);
+	if (first_if_in_chain) LLVMPositionBuilderAtEnd(llvm_builder, exit_block);
+
+	return condition_block;
 }
 
 //starts on fn keyword
@@ -1166,6 +1290,11 @@ static bool parseStatement(
 
 		case TOKEN_WHILE:
 		parseWhileStatement(compilation_unit, llvm_builder, current_function, scope_index);
+		incrementToken();
+		break;
+
+		case TOKEN_IF:
+		parseIfStatement(compilation_unit, llvm_builder, current_function, scope_index, NULL);
 		incrementToken();
 		break;
 
